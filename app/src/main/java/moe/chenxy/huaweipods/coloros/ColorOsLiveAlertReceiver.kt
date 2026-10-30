@@ -119,13 +119,15 @@ class ColorOsLiveAlertReceiver : BroadcastReceiver() {
             BluetoothAdapter.ACTION_STATE_CHANGED -> {
                 val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
                 if (ColorOsLiveAlertConnectionPolicy.isBluetoothTurningOffOrOff(state)) {
-                    if (state == BluetoothAdapter.STATE_OFF &&
-                        runCatching {
-                            context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled
-                        }.getOrNull() != false
-                    ) {
-                        // 广播没有身份信息，只能核对真实适配器状态：STATE_OFF 而适配器仍开着 = 伪造。
-                        Log.w(TAG, "Ignored a Bluetooth OFF request while the adapter is enabled")
+                    // 广播没有身份信息，只能核对真实适配器状态：声称关机/正在关但适配器其实还开着 = 伪造。
+                    val actualState = runCatching {
+                        context.getSystemService(BluetoothManager::class.java)?.adapter?.state
+                    }.getOrNull()
+                    if (!ColorOsLiveAlertConnectionPolicy.shouldCancelForAdapterState(state, actualState)) {
+                        Log.w(
+                            TAG,
+                            "Ignored a Bluetooth shutdown request claimed=$state actual=$actualState",
+                        )
                         return
                     }
                     cancelLiveAlert(context, manager, statePrefs, eventElapsed)

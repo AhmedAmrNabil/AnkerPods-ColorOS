@@ -85,8 +85,11 @@ class ColorOsLiveAlertService : Service() {
             val event = intent ?: return
             val shouldStop = when (event.action) {
                 BluetoothAdapter.ACTION_STATE_CHANGED ->
-                    ColorOsLiveAlertConnectionPolicy.isBluetoothTurningOffOrOff(
+                    ColorOsLiveAlertConnectionPolicy.shouldCancelForAdapterState(
                         event.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR),
+                        runCatching {
+                            getSystemService(BluetoothManager::class.java)?.adapter?.state
+                        }.getOrNull(),
                     )
 
                 BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED,

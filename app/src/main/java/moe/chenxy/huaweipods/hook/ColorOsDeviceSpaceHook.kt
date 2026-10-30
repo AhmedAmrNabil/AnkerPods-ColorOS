@@ -11,6 +11,7 @@ import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
+import android.util.AttributeSet
 import android.util.LruCache
 import android.view.View
 import android.view.ViewGroup
@@ -43,6 +44,7 @@ object ColorOsDeviceSpaceHook : HookContext() {
     private const val DATA = "com.oplus.mydevices.domain.entities.cards.QuickCardDeviceData"
     private const val DEVICE = "com.oplus.mydevices.domain.ports.device.IDevice"
     private const val DETAIL_ACTIVITY = "com.oplus.mydevices.bluetooth.PluginPanelHostActivity"
+private const val HOME_CARD_BATTERY = "com.oplus.mydevices.quickapp.homecard.view.BatteryLottieView"
     private val main = Handler(Looper.getMainLooper())
     private val requests = DeviceSpaceImageRequests<ImageView>()
     private val images = WeakHashMap<ImageView, OriginalImage>()
@@ -77,6 +79,7 @@ object ColorOsDeviceSpaceHook : HookContext() {
     @Volatile private var lastGateSignature: String? = null
     @Volatile private var lastModeSignature: String? = null
     @Volatile private var viewDumped = false
+    @Volatile private var cardTreeDumped = false
 
     private fun viewDumpDone(): Boolean = viewDumped
 
@@ -94,7 +97,61 @@ object ColorOsDeviceSpaceHook : HookContext() {
         runCatching { hookApplicationCreate() }
             .onSuccess { Log.i(TAG, "Device Space battery receiver hook installed") }
             .onFailure { Log.w(TAG, "Unable to hook Application.onCreate for battery", it) }
+        runCatching { hookHomeCardLayout() }
+            .onSuccess { Log.i(TAG, "Device Space home card layout probe installed") }
+            .onFailure { Log.w(TAG, "Home card layout probe unavailable", it) }
     }
+
+    /**
+     * 设备空间首页卡片是 `HomeCardView` + `BatteryLottieView`（Lottie 电量动画），
+     * 既不读 `h()` 的 DTO 电池槽也不走 `BlueToothCardView`，所以要三段数字只能自己往卡里挂视图。
+     * 这里先在 `BatteryLottieView` 构造完时把卡片内部结构打一次（一次性），
+     * 拿到父容器和电量文本的真实 id 以后再决定往哪插。
+     */
+    private fun hookHomeCardLayout() {
+        val type = findClass(HOME_CARD_BATTERY)
+        // XML 里一般是两参构造，代码里 new 出来是 (Context, AttributeSet, int)，两个都挂上。
+        val constructors = listOfNotNull(
+            runCatching { type.getDeclaredConstructor(Context::class.java, AttributeSet::class.java) }
+                .getOrNull(),
+            runCatching {
+                type.getDeclaredConstructor(Context::class.java, AttributeSet::class.java, Int::class.javaPrimitiveType!!)
+            }.getOrNull(),
+        )
+        check(constructors.isNotEmpty()) { "no usable BatteryLottieView constructor" }
+        constructors.forEach { constructor ->
+            hookConstructorAfter(constructor) {
+                (instance as? View)?.let { view -> main.post { dumpHomeCardTree(view) } }
+            }
+        }
+    }
+
+    private fun dumpHomeCardTree(battery: View) {
+        if (cardTreeDumped) return
+        cardTreeDumped = true
+        runCatching {
+            val builder = StringBuilder()
+            var node: View = battery
+            repeat(5) { level ->
+                val parent = node.parent as? ViewGroup ?: return@repeat
+                builder.append(" | L").append(level).append(' ')
+                    .append(parent.javaClass.simpleName).append('#').append(idName(parent)).append(':')
+                for (index in 0 until parent.childCount) {
+                    val child = parent.getChildAt(index)
+                    builder.append(' ').append(child.javaClass.simpleName)
+                        .append('#').append(idName(child))
+                    if (child is TextView) builder.append("=\"").append(child.text).append('"')
+                    if (child is ViewGroup) builder.append('(').append(child.childCount).append(')')
+                }
+                node = parent
+            }
+            Log.i(TAG, "Device Space card tree$builder")
+        }.onFailure { Log.w(TAG, "Unable to dump Device Space card tree", it) }
+    }
+
+    private fun idName(view: View): String = runCatching {
+        if (view.id == View.NO_ID) "-" else view.resources.getResourceEntryName(view.id)
+    }.getOrDefault("?")
 
     /**
      * `onPackageLoaded` 阶段宿主还没有 Application，拿不到 Context，所以电量接收者挂在

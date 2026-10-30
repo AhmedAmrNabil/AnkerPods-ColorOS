@@ -189,3 +189,21 @@ Device Space view dump cards=0 classes=[
 - 首页要显示三段，需要新做 `HomeCardView`/`BatteryLottieView` 视图级注入（自己挂一行三段文本/图标），
   不是打开现有开关能得到的；下一轮独立做。
 - 诊断日志（`Device Space battery event` / `DTO gate` / `card mode` / `view dump`）保留，每进程各一条。
+
+### 8.5 第二轮实测补充（21:35–21:45）
+
+- **`BlueToothCardView` 只在弹窗/详情窗口里出现**：打开弹窗那一刻的日志是
+  `card mode enabled=false modeClass=true address=30:A9:98:CB:C4:54 storeHit=true isMulti=true`、
+  `Existing detail image recovery roots=3 cards=1` —— 视图、地址、三段数据、`isMulti` 全部对得上，
+  说明 §4.7/§4.8 那条路对**弹窗里的蓝牙卡**是通的，只是首页不用它。
+- **三段数字在弹窗里一直是对的，且不是本轮代码的功劳**：`svc bluetooth disable/enable` 重新触发
+  `com.heytap.accessory/...DialogActivity` 后显示「左耳 100% · 右耳 100% · 耳机盒 93% ⚡」，
+  和 `hueweipods_multi_battery=0/3` 无关 —— 那是既有的 `ColorOsSystemBatteryBridge` 在供数。
+- **`BatteryLottieView` 构造钩子在本机不触发**：两参和三参构造都挂了，日志里一条 `card tree` 都没有，
+  说明首页卡片的 Lottie 电量不是在这两个构造点建出来的（或建在别的进程/更早），
+  所以"读结构再插入"这条路本轮没走通，探针保留但不指望它。
+- **通知链路在信任加固后是好的**：日志 `notification receiver registered` →
+  `Cached notification restored device=…` → 断开时 `ColorOS notification cleared on ACL disconnect`，
+  发布、恢复、清理三段都走到了。
+- **`module resources unavailable` 本轮没复现**：整套新日志里一条都没有，模块资源在干净进程里可用；
+  之前那次是"覆盖安装 + 宿主进程复用旧句柄"导致的，重启宿主即恢复（§5 第 6 条）。

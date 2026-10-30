@@ -14,6 +14,11 @@ data class AppConfig(
     val notificationClickAction: Int = ConfigManager.NOTIFICATION_CLICK_MODULE_POPUP,
     val moreClickAction: Int = ConfigManager.MORE_CLICK_MODULE,
     val lowBatteryReminderEnabled: Boolean = true,
+    /**
+     * 设备空间三段电量的位掩码：bit0 = 往宿主 DTO 写三段，bit1 = 卡片切 `MULTI` 布局。
+     * 默认 0（全关）：宿主的多段布局是给 AirPods 准备的，没验证过就不要替用户打开。
+     */
+    val multiBatteryMask: Int = 0,
 )
 
 object ConfigManager {
@@ -27,6 +32,10 @@ object ConfigManager {
     const val PREF_KEY_NOTIFICATION_CLICK_ACTION = "notification_click_action"
     const val PREF_KEY_MORE_CLICK_ACTION = "more_click_action"
     const val PREF_KEY_LOW_BATTERY_REMINDER_ENABLED = "low_battery_reminder_enabled"
+    const val PREF_KEY_MULTI_BATTERY_MASK = "multi_battery_mask"
+    const val MULTI_BATTERY_DTO_BIT = 1
+    const val MULTI_BATTERY_CARD_BIT = 2
+    const val MULTI_BATTERY_MASK_MAX = MULTI_BATTERY_DTO_BIT or MULTI_BATTERY_CARD_BIT
     const val LOG_LEVEL_OFF = 0
     const val LOG_LEVEL_BASIC = 1
     const val LOG_LEVEL_DEBUG = 2
@@ -72,6 +81,13 @@ object ConfigManager {
     fun moreClickAction(): Int = current().moreClickAction.normalizedMoreClickAction()
 
     fun lowBatteryReminderEnabled(): Boolean = current().lowBatteryReminderEnabled
+
+    /** 设备空间三段电量的位掩码，见 [AppConfig.multiBatteryMask]。 */
+    fun multiBatteryMask(): Int = current().multiBatteryMask
+
+    fun updateMultiBatteryMask(prefs: SharedPreferences, service: XposedService?, mask: Int) {
+        save(prefs, service, current().copy(multiBatteryMask = mask))
+    }
 
     fun updateLogLevel(prefs: SharedPreferences, service: XposedService?, logLevel: Int) {
         val config = current().copy(logLevel = logLevel.coerceIn(LOG_LEVEL_OFF, LOG_LEVEL_DEBUG))
@@ -154,6 +170,7 @@ object ConfigManager {
             .putInt(PREF_KEY_NOTIFICATION_CLICK_ACTION, config.notificationClickAction)
             .putInt(PREF_KEY_MORE_CLICK_ACTION, config.moreClickAction)
             .putBoolean(PREF_KEY_LOW_BATTERY_REMINDER_ENABLED, config.lowBatteryReminderEnabled)
+            .putInt(PREF_KEY_MULTI_BATTERY_MASK, config.multiBatteryMask)
             .commit()
     }
 
@@ -168,6 +185,7 @@ object ConfigManager {
         val directNotificationClickAction = prefs.getInt(PREF_KEY_NOTIFICATION_CLICK_ACTION, Int.MIN_VALUE)
         val directMoreClickAction = prefs.getInt(PREF_KEY_MORE_CLICK_ACTION, Int.MIN_VALUE)
         val directLowBatteryReminderEnabled = prefs.booleanOrNull(PREF_KEY_LOW_BATTERY_REMINDER_ENABLED)
+        val directMultiBatteryMask = prefs.getInt(PREF_KEY_MULTI_BATTERY_MASK, Int.MIN_VALUE)
         val raw = prefs.getString(PREF_KEY_CONFIG_JSON, null)
         logPrefsSnapshot(source, prefs, raw)
         val config = raw?.let {
@@ -182,6 +200,7 @@ object ConfigManager {
             notificationClickAction = directNotificationClickAction.takeIf { it != Int.MIN_VALUE } ?: config.notificationClickAction,
             moreClickAction = directMoreClickAction.takeIf { it != Int.MIN_VALUE } ?: config.moreClickAction,
             lowBatteryReminderEnabled = directLowBatteryReminderEnabled ?: config.lowBatteryReminderEnabled,
+            multiBatteryMask = directMultiBatteryMask.takeIf { it != Int.MIN_VALUE } ?: config.multiBatteryMask,
         ).normalized()
     }
 
@@ -189,6 +208,7 @@ object ConfigManager {
         logLevel = logLevel.coerceIn(LOG_LEVEL_OFF, LOG_LEVEL_DEBUG),
         notificationClickAction = notificationClickAction.normalizedNotificationClickAction(),
         moreClickAction = moreClickAction.normalizedMoreClickAction(),
+        multiBatteryMask = multiBatteryMask and MULTI_BATTERY_MASK_MAX,
     )
 
     internal fun Int.normalizedNotificationClickAction(): Int = when (this) {
@@ -255,6 +275,9 @@ object ConfigManager {
             }
             if (oldConfig.moreClickAction != newConfig.moreClickAction) {
                 add("moreClickAction=${oldConfig.moreClickAction}->${newConfig.moreClickAction}")
+            }
+            if (oldConfig.multiBatteryMask != newConfig.multiBatteryMask) {
+                add("multiBatteryMask=${oldConfig.multiBatteryMask}->${newConfig.multiBatteryMask}")
             }
         }
     }

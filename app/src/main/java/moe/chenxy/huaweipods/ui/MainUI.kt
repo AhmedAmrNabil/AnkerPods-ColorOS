@@ -212,6 +212,9 @@ internal fun MainUI(
     val lowBatteryReminderEnabled = remember {
         mutableStateOf(appConfig.lowBatteryReminderEnabled)
     }
+    val multiBatteryDtoEnabled = remember {
+        mutableStateOf(appConfig.multiBatteryMask and ConfigManager.MULTI_BATTERY_DTO_BIT != 0)
+    }
     val earphonePrefs = remember { mutableStateOf(PodImagePrefs.load(prefs)) }
     val checkUpdatesOnLaunch = remember {
         mutableStateOf(lifecyclePrefs.checkUpdatesOnLaunch())
@@ -1194,6 +1197,20 @@ internal fun MainUI(
                         onLowBatteryReminderEnabledChange = {
                             lowBatteryReminderEnabled.value = it
                             ConfigManager.updateLowBatteryReminderEnabled(prefs, xposedService, it)
+                            broadcastConfigChanged(context, "com.android.bluetooth")
+                        },
+                        multiBatteryDtoEnabled = multiBatteryDtoEnabled,
+                        onMultiBatteryDtoEnabledChange = { enabled ->
+                            multiBatteryDtoEnabled.value = enabled
+                            val preserved = ConfigManager.multiBatteryMask() and
+                                ConfigManager.MULTI_BATTERY_DTO_BIT.inv()
+                            val mask = if (enabled) {
+                                preserved or ConfigManager.MULTI_BATTERY_DTO_BIT
+                            } else {
+                                preserved
+                            }
+                            ConfigManager.updateMultiBatteryMask(prefs, xposedService, mask)
+                            broadcastConfigChanged(context, "com.heytap.mydevices")
                             broadcastConfigChanged(context, "com.android.bluetooth")
                         },
                         onPreviewLowBatteryReminder = {

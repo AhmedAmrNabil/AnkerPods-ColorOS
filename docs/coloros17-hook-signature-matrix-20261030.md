@@ -59,6 +59,21 @@ QuickCardDeviceDataConverter#h(IDevice,$c,$e,$d,Z)  →  QuickCardDeviceData
 再把卡片的 `f` 设成 `MULTI`，设备空间首页卡片就会按系统原生样式显示左 / 右 / 盒三段电量**，
 不需要碰 protobuf 的 `ProtocolDeviceViewData`，也不需要 `deviceplugin.sdk`（那套确实只在 SystemUI 里）。
 
+> **⚠ 真机更正（2026-10-30，OnePlus 15 / ColorOS 17）**
+>
+> 上面这段"顺手就能吃到"的推断**被真机证伪**，错在"设备空间首页卡片 = `BlueToothCardView`"这个前提：
+>
+> - 遍历窗口里的真实视图类（一次性 dump，见[审计报告](coloros17-audit-report-20261030.md) §8.2）：
+>   `HomeCardRecyclerView` / `homecard.HomeCardView` / `quickapp.homecard.view.BatteryLottieView`，
+>   **一个 `BlueToothCardView` 都没有**（`cards=0`）。
+> - 给 `h()` 加落点日志后，首页渲染期间进来的地址是别的设备（`B4:E7:B3:05:57:7E`）和空串，
+>   FreeClip 的地址一次都没进 `h()` —— 首页卡片的电量不走 `QuickCardDeviceData`。
+> - `BlueToothCardView#k()` / `setBatteryPower()` 的钩子在整个验证过程中一次都没触发。
+>
+> 因此：`h()` 的 DTO 电池槽 + `MULTI` 切换对**蓝牙设置侧的 `BlueToothCardView`** 仍然有效（那套布局与字段
+> 已按固件逐字核对），但对**设备空间首页**无效。首页要显示三段得新做 `HomeCardView`/`BatteryLottieView`
+> 视图级注入，不能用打开开关的方式得到。
+
 ### 2.1 真机打过一次，翻车了：`MULTI` 会把英雄图让给 ViewStub（dexdump 实证）
 
 按上面那条路做完、装到 PLK110 上，结果是"耳机图变成白色带柄的通用 TWS 图，电量还是单值"。

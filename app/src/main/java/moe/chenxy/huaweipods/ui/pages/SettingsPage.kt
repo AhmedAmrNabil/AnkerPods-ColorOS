@@ -44,6 +44,8 @@ fun SettingsPage(
     onLockscreenNotificationEnabledChange: (Boolean) -> Unit = {},
     lowBatteryReminderEnabled: MutableState<Boolean> = mutableStateOf(true),
     onLowBatteryReminderEnabledChange: (Boolean) -> Unit = {},
+    multiBatteryDtoEnabled: MutableState<Boolean> = mutableStateOf(false),
+    onMultiBatteryDtoEnabledChange: (Boolean) -> Unit = {},
     onPreviewLowBatteryReminder: () -> Unit = {},
     appLanguage: MutableState<Int> = mutableStateOf(AppLocale.SYSTEM),
     onAppLanguageChange: (Int) -> Unit = {},
@@ -184,6 +186,12 @@ fun SettingsPage(
                         title = stringResource(R.string.coloros_background_settings),
                         summary = stringResource(R.string.coloros_background_settings_summary),
                         onClick = { openColorOsBackgroundSettings(context) },
+                    )
+                    SwitchPreference(
+                        title = stringResource(R.string.coloros_multi_battery_dto),
+                        summary = stringResource(R.string.coloros_multi_battery_dto_summary),
+                        checked = multiBatteryDtoEnabled.value,
+                        onCheckedChange = onMultiBatteryDtoEnabledChange,
                     )
                 }
                 OverlayDropdownPreference(

@@ -87,9 +87,10 @@ AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `Bat
 
 1. **流体云卡片内的按钮点不动** —— 平台模板限制（整卡一个 `contentIntent`），已用"点卡片开弹窗"绕开，
    不做 hack（伪造 `PendingIntent` 会破坏平台校验）。
-2. **设备空间多段电量未开启** —— `MULTI_BATTERY_CARD_ENABLED = false`。数据面已通，
-   多格块的填数逻辑也写好了（§4.8），但还差一次真机确认：`MULTI` 下卡片不再画设备图，
-   需要先决定"要不要在这种模式下自己把 FreeClip 图贴回多格块"再打开开关。
+2. **设备空间首页卡片的"三段电量"没有注入面** —— 真机验证后结论变了，详见 §8：首页卡片是
+   `HomeCardView` + `BatteryLottieView`（Lottie 电量），既不读 `h()` 返回的 DTO 电池槽，
+   也不走 `BlueToothCardView#k()/setBatteryPower`。§4.7/§4.8 的数据面与四格块逻辑保留（蓝牙设置侧卡片仍可能用到），
+   但要让首页显示三段，必须新做 `HomeCardView` 视图级注入，属下一轮独立工程。
 3. **原生三段降噪（`TRANSPORT_HFP_AT` + `+OBUDS`）** —— 需要真机反复试 AT 帧，本轮未动。
 4. **状态栏耳机电池图标** —— ColorOS 17 移除了蓝牙 UID 的 STATUS_BAR 权限，图标由 SystemUI 自绘，无挂点。
 5. **控制中心设备卡片条 / 流体云种子卡** —— 实证无第三方入口：种子卡通道是 ContentProvider
@@ -134,3 +135,57 @@ adb -s 127.0.0.1:18583 shell settings put global huaweipods_multi_battery 0   # 
 # 看模块日志
 adb -s 127.0.0.1:18583 shell 'su -c "tail -n 200 /data/adb/lspd/log/modules_*.log"'
 ```
+
+## 8. 真机验证（2026-10-30 21:00，OnePlus 15 / ColorOS 17，FreeClip 已连接）
+
+### 8.1 数据面：通了
+
+`settings put global huaweipods_multi_battery 3` 后重启宿主，两个进程都按秒级收到三段数据：
+
+```
+(com.heytap.mydevices:cards) Device Space battery event 30:A9:98:CB:C4:54 left=100/true right=100/true case=44/true
+(com.heytap.mydevices)       Device Space battery event 30:A9:98:CB:C4:54 left=100/true right=100/true case=44/true
+```
+
+链路成立：`HuaweiHfpController#sendBattery` → 共享身份广播 → 宿主 `Application.onCreate` 注册的动态接收者
+→ `ColorOsPodBatteryStore`。注意接收者 **必须在广播之后** 才有数据，卡片首次构建时仓库必然为空，
+所以 `applyCardBattery` 现在保留 DTO 弱引用，电量到了直接补写同一个对象（`reapplyLastCardBattery()`）。
+
+### 8.2 展示面：首页卡片根本不碰 `BlueToothCardView`
+
+给 `h()` 加落点日志后，一次首页渲染只有不相关地址进来，FreeClip 地址一条都没有：
+
+```
+Device Space h() skipped: unsupported route address=B4:E7:B3:05:57:7E
+Device Space h() skipped: unsupported route address=
+```
+
+一次性 dump 窗口里的真实视图类：
+
+```
+Device Space view dump cards=0 classes=[
+  com.oplus.mydevices.deviceui.devicecard.view.HomeCardRecyclerView,
+  com.oplus.mydevices.deviceui.devicecard.view.homecard.HomeCardView,
+  com.oplus.mydevices.quickapp.homecard.view.IndicatorButtonView,
+  com.oplus.mydevices.quickapp.homecard.view.IndicatorLightView,
+  com.oplus.mydevices.quickapp.homecard.view.BatteryLottieView]
+```
+
+**设备空间首页卡片是 `HomeCardView` + `BatteryLottieView`（Lottie 电量动画），不是审计阶段认定的
+`BlueToothCardView`**。`BlueToothCardView`（`layout/devicecard_control_preference_bt`）用在蓝牙设置侧，
+首页那张卡既不读 DTO 电池槽，也不调 `k()`/`setBatteryPower`（日志里 `cards=0`、`card mode` 一条没有），
+所以 §4.7/§4.8 的数据面与四格块在这张卡上不会被触发。
+
+### 8.3 三段电量目前靠哪条路显示
+
+首页卡片仍是单值（截图 `verify2-04-multi-card.png` 里 `100`），三段数字由既有的
+`ColorOsSystemBatteryBridge`（模块 → 系统耳机电量通道）驱动，弹窗/详情显示
+「左耳 100% · 右耳 100% · 耳机盒 45%」（`verify2-03-devicespace-connected.png`）。
+
+### 8.4 处置
+
+- 两个开关保持默认全关；新增 App 内开关（设置 → ColorOS 分区「设备空间三段电量（实验）」），
+  与 `Settings.Global` 覆盖并存（adb 非 0 时优先）。
+- 首页要显示三段，需要新做 `HomeCardView`/`BatteryLottieView` 视图级注入（自己挂一行三段文本/图标），
+  不是打开现有开关能得到的；下一轮独立做。
+- 诊断日志（`Device Space battery event` / `DTO gate` / `card mode` / `view dump`）保留，每进程各一条。

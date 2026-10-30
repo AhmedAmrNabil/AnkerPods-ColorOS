@@ -2,21 +2,23 @@ package moe.chenxy.huaweipods.hook
 
 import android.content.Context
 import android.provider.Settings
+import moe.chenxy.huaweipods.config.ConfigManager
 
 /**
  * 设备空间三段电量的运行时开关。
  *
- * 之前这两个开关是编译期 `const`：每换一种组合都要重新构建 + 重装 + 重启宿主进程，
- * 真机上验证一次的成本极高。现在改成读 `Settings.Global` 的位掩码，改一行 `adb shell settings put`
- * 就生效，不用重装：
+ * 取值有两个来源，**adb 覆盖优先**：
  *
- * ```
- * adb shell settings put global huaweipods_multi_battery 1   # 只写 DTO（验证详情页吃不吃三段）
- * adb shell settings put global huaweipods_multi_battery 3   # DTO + 卡片切 MULTI
- * adb shell settings put global huaweipods_multi_battery 0   # 全关（默认）
- * ```
+ * 1. `Settings.Global/huaweipods_multi_battery`（非 0 时生效）——调试/验证用，改一行命令就切，不用重装：
+ *    ```
+ *    adb shell settings put global huaweipods_multi_battery 1   # 只写 DTO
+ *    adb shell settings put global huaweipods_multi_battery 3   # DTO + 卡片切 MULTI
+ *    adb shell settings put global huaweipods_multi_battery 0   # 交还给 App 设置
+ *    ```
+ * 2. 模块设置里的开关（`AppConfig.multiBatteryMask`，经 LSPosed remote prefs 同步到宿主进程）——
+ *    普通用户走这条，不需要 adb。
  *
- * 读取失败（取不到 `ContentResolver`、被限额等）一律按"关"处理：宁可少写，不可误写宿主卡片。
+ * 两个来源都取不到时按 0（全关）处理：宁可少写，不可误写宿主卡片。
  */
 internal object ColorOsBatteryFlags {
     const val SETTINGS_KEY = "huaweipods_multi_battery"
@@ -52,8 +54,13 @@ internal object ColorOsBatteryFlags {
     }
 
     private fun currentMask(): Int {
-        val resolver = context?.contentResolver ?: return 0
-        return Settings.Global.getInt(resolver, SETTINGS_KEY, 0)
+        // adb 覆盖：非 0 就用它，0 表示"交还给 App 设置"。
+        val resolver = context?.contentResolver
+        if (resolver != null) {
+            val override = runCatching { Settings.Global.getInt(resolver, SETTINGS_KEY, 0) }.getOrDefault(0)
+            if (override != 0) return override
+        }
+        return ConfigManager.multiBatteryMask()
     }
 }
 

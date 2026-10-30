@@ -17,6 +17,8 @@
     <string name="coloros_live_alert_settings_summary">打开系统通知设置并开启“实时提醒”</string>
     <string name="coloros_background_settings">ColorOS 自启动管理</string>
     <string name="coloros_background_settings_summary">允许自启动和后台活动，让弹窗与流体云能稳定唤醒</string>
+    <string name="coloros_multi_battery_dto">设备空间三段电量（实验）</string>
+    <string name="coloros_multi_battery_dto_summary">把左耳 / 右耳 / 耳机盒三段电量写进系统设备卡片的数据对象，供详情页与快捷卡片读取；改动会在几秒后对已打开的设备空间生效</string>
     <string name="pod_info">耳机信息</string>
     <string name="settings">设置</string>
     <string name="module">模块</string>

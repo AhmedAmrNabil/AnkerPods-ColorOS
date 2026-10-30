@@ -16,6 +16,8 @@
     <string name="coloros_live_alert_settings_summary">Open system notification settings and enable Live alerts</string>
     <string name="coloros_background_settings">ColorOS auto-launch</string>
     <string name="coloros_background_settings_summary">Allow auto-launch and background activity so popups and Fluid Cloud can wake reliably</string>
+    <string name="coloros_multi_battery_dto">Device Space three-part battery (experimental)</string>
+    <string name="coloros_multi_battery_dto_summary">Write left / right / case levels into the system device card data object so the detail page and quick card can read them; takes effect within a few seconds</string>
     <string name="pod_info">Pod Info</string>
     <string name="settings">Settings</string>
     <string name="module">Module</string>

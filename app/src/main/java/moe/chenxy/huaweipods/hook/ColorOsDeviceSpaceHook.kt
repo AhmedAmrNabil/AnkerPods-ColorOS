@@ -63,6 +63,27 @@ object ColorOsDeviceSpaceHook : HookContext() {
     private var batteryReceiver: BroadcastReceiver? = null
     private var batteryReceiverContext: Context? = null
 
+    /**
+     * 最近一次构建出来的卡片 DTO。
+     *
+     * 宿主只在数据变化时重建卡片（切页、连接状态变化），电量广播每十来秒一次，光靠 `h()`
+     * 重跑根本等不到：卡片第一次构建时仓库必然是空的。所以这里留下弱引用，电量到了直接
+     * 把新数据补进同一个 DTO，详情页下次读到的就是三段。
+     */
+    @Volatile private var lastCardData: java.lang.ref.WeakReference<Any>? = null
+    @Volatile private var lastCardAddress: String? = null
+    @Volatile private var lastCardShape: HomeCardBatteryShape? = null
+    @Volatile private var lastBatterySignature: String? = null
+    @Volatile private var lastGateSignature: String? = null
+    @Volatile private var lastModeSignature: String? = null
+    @Volatile private var viewDumped = false
+
+    private fun viewDumpDone(): Boolean = viewDumped
+
+    private fun markViewDumpDone() {
+        viewDumped = true
+    }
+
     override fun onHook() {
         runCatching { hookHomeImages() }
             .onSuccess { Log.i(TAG, "Device Space home image hook installed") }
@@ -102,24 +123,32 @@ object ColorOsDeviceSpaceHook : HookContext() {
                 when (intent.action) {
                     HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED -> {
                         val target = address ?: return
-                        ColorOsPodBatteryStore.put(
-                            ColorOsPodBattery(
-                                address = target,
-                                left = intent.getIntExtra("left_battery", 0),
-                                leftConnected = intent.getBooleanExtra("left_connected", false),
-                                right = intent.getIntExtra("right_battery", 0),
-                                rightConnected = intent.getBooleanExtra("right_connected", false),
-                                case = intent.getIntExtra("case_battery", 0),
-                                caseConnected = intent.getBooleanExtra("case_connected", false),
-                            ),
+                        val pod = ColorOsPodBattery(
+                            address = target,
+                            left = intent.getIntExtra("left_battery", 0),
+                            leftConnected = intent.getBooleanExtra("left_connected", false),
+                            right = intent.getIntExtra("right_battery", 0),
+                            rightConnected = intent.getBooleanExtra("right_connected", false),
+                            case = intent.getIntExtra("case_battery", 0),
+                            caseConnected = intent.getBooleanExtra("case_connected", false),
                         )
+                        ColorOsPodBatteryStore.put(pod)
+                        val signature = "$target left=${pod.left}/${pod.leftConnected} " +
+                            "right=${pod.right}/${pod.rightConnected} case=${pod.case}/${pod.caseConnected}"
+                        if (signature != lastBatterySignature) {
+                            lastBatterySignature = signature
+                            Log.i(TAG, "Device Space battery event $signature")
+                        }
                     }
                     HuaweiPodsAction.ACTION_PODS_DISCONNECTED -> ColorOsPodBatteryStore.clear(address)
                     else -> return
                 }
                 // 只刷电量：图片刷新链路会按 host 原生图 restore，电量广播每十几秒一次，
                 // 走图片路径会把已经替换好的耳机图反复还原回宿主默认图。
-                main.post { refreshVisibleBattery() }
+                main.post {
+                    refreshVisibleBattery()
+                    reapplyLastCardBattery()
+                }
             }
         }
         val filter = IntentFilter().addHuaweiPodsActions(
@@ -149,9 +178,21 @@ object ColorOsDeviceSpaceHook : HookContext() {
         hookAfter(method) {
             runCatching {
                 // h returns a freshly allocated presentation DTO. Never change the IDevice or database.
-                val address = addressGetter.invoke(args[0]) as? String ?: return@runCatching
-                val app = currentApplicationOrNull() ?: return@runCatching
-                val route = routeFor(app, address) ?: return@runCatching
+                val address = addressGetter.invoke(args[0]) as? String
+                if (address == null) {
+                    Log.i(TAG, "Device Space h() skipped: no address")
+                    return@runCatching
+                }
+                val app = currentApplicationOrNull()
+                if (app == null) {
+                    Log.i(TAG, "Device Space h() skipped: no Application address=$address")
+                    return@runCatching
+                }
+                val route = routeFor(app, address)
+                if (route == null) {
+                    Log.i(TAG, "Device Space h() skipped: unsupported route address=$address")
+                    return@runCatching
+                }
                 val data = result ?: return@runCatching
                 val title = getObjectField(data, "name") as? String ?: return@runCatching
                 val uri = imageUri(address, route)
@@ -201,8 +242,6 @@ object ColorOsDeviceSpaceHook : HookContext() {
      * 两个开关都是**运行时**读 `Settings.Global/huaweipods_multi_battery`（默认 0 = 全关），
      * 真机验证时用 `adb shell settings put global huaweipods_multi_battery 1` 直接切，不用重装。
      */
-    private fun dtoBatteryEnabled(): Boolean = ColorOsBatteryFlags.dtoEnabled()
-
     private fun cardBatteryEnabled(): Boolean = ColorOsBatteryFlags.cardEnabled()
 
     /**
@@ -214,8 +253,23 @@ object ColorOsDeviceSpaceHook : HookContext() {
      * `BlueToothCardView`（有地址字段 `c`）才是唯一带地址作用域的注入面。
      */
     private fun applyCardBattery(data: Any, address: String, shape: HomeCardBatteryShape) {
-        if (!dtoBatteryEnabled() && !cardBatteryEnabled()) return
-        val triple = colorOsBatteryTriple(ColorOsPodBatteryStore.get(address)) ?: return
+        // 开关要读 Settings.Global（adb 覆盖）和模块配置，两者都需要宿主 Context；
+        // 卡片绑定不一定发生在 Application.onCreate 之后，所以这里再兜一次。
+        ColorOsBatteryFlags.attach(currentApplicationOrNull())
+        // 卡片 DTO 只在数据变化时重建，所以留一份弱引用供电量广播补写。
+        lastCardData = java.lang.ref.WeakReference(data)
+        lastCardAddress = address
+        lastCardShape = shape
+        val snapshot = ColorOsPodBatteryStore.get(address)
+        val mask = ColorOsBatteryFlags.mask()
+        val gate = "mask=$mask storeHit=${snapshot != null} " +
+            "left=${snapshot?.left} right=${snapshot?.right} case=${snapshot?.case}"
+        if (gate != lastGateSignature) {
+            lastGateSignature = gate
+            Log.i(TAG, "Device Space DTO gate $gate address=$address")
+        }
+        if (mask and (ColorOsBatteryFlags.BIT_DTO or ColorOsBatteryFlags.BIT_CARD) == 0) return
+        val triple = colorOsBatteryTriple(snapshot) ?: return
         // 缺的段不写：宿主对没写过的槽位保持自己的处理，塞 0 反而会显示成"0%"。
         triple.left?.let { setObjectField(data, "batteryLeft", shape.info(ColorOsBatteryTriple.CHANNEL_LEFT, it)) }
         triple.right?.let { setObjectField(data, "batteryRight", shape.info(ColorOsBatteryTriple.CHANNEL_RIGHT, it)) }
@@ -233,15 +287,34 @@ object ColorOsDeviceSpaceHook : HookContext() {
         )
     }
 
+    /** 电量到了以后，把新数据补写进最近一次构建的卡片 DTO（弱引用没了就等下次重建）。 */
+    private fun reapplyLastCardBattery() {
+        val data = lastCardData?.get() ?: return
+        val address = lastCardAddress ?: return
+        val shape = lastCardShape ?: return
+        runCatching { applyCardBattery(data, address, shape) }
+            .onFailure { Log.w(TAG, "Unable to refresh Device Space DTO battery", it) }
+    }
+
     /** 卡片视图侧：宿主按 `SINGLE` 只画一个数字，这里在它 bind 完以后切成 `MULTI`。 */
     private fun applyCardBatteryMode(card: View, shape: HomeCardBatteryShape) {
-        if (!cardBatteryEnabled()) return
         if (applyingBattery) return
-        val modeClass = shape.viewModeClass ?: return
-        val address = getObjectField(card, "c") as? String ?: return
-        val triple = colorOsBatteryTriple(ColorOsPodBatteryStore.get(address)) ?: return
+        val enabled = cardBatteryEnabled()
+        val modeClass = shape.viewModeClass
+        val address = getObjectField(card, "c") as? String
+        val snapshot = address?.let { ColorOsPodBatteryStore.get(it) }
+        val triple = colorOsBatteryTriple(snapshot)
+        val signature = "enabled=$enabled modeClass=${modeClass != null} address=$address " +
+            "storeHit=${snapshot != null} isMulti=${triple?.isMulti}"
+        if (signature != lastModeSignature) {
+            lastModeSignature = signature
+            Log.i(TAG, "Device Space card mode $signature")
+        }
+        if (!enabled) return
+        if (modeClass == null) return
+        if (address == null) return
         // 一段电量切多段布局只会得到一块空着的模板，不值得切。
-        if (!triple.isMulti) return
+        if (triple == null || !triple.isMulti) return
         val mode = runCatching { modeClass.getMethod("valueOf", String::class.java).invoke(null, "MULTI") }
             .getOrNull() ?: return
         applyingBattery = true
@@ -365,7 +438,16 @@ object ColorOsDeviceSpaceHook : HookContext() {
             findMethod(CARD, "setBluetoothAddress", String::class.java),
             findMethod(CARD, "setDeviceName", String::class.java))
         check(methods.all { it.returnType == Void.TYPE })
-        methods.forEach { method -> hookAfter(method) { (instance as? View)?.let(::schedule) } }
+        // 这三个方法在真机上都会跑（`k()` 只是其中之一），电量模式跟着它们走：
+        // 只挂 `k()`/`setBatteryPower` 时实测一次都没触发，卡片就一直停在 INTEGER/SINGLE。
+        methods.forEach { method ->
+            hookAfter(method) {
+                (instance as? View)?.let { view ->
+                    schedule(view)
+                    batteryShape?.let { shape -> applyCardBatteryMode(view, shape) }
+                }
+            }
+        }
         // Hot reload does not replay native view binding. An existing panel must be
         // rediscovered after old images are restored, and again when a paused panel resumes.
         hookAfter(Activity::class.java.getDeclaredMethod("onPostResume")) {
@@ -398,6 +480,8 @@ object ColorOsDeviceSpaceHook : HookContext() {
             val manager = windowType.getDeclaredMethod("getInstance").invoke(null)
             val roots = (getObjectField(manager, "mViews") as? List<*>)
                 ?.filterIsInstance<View>()?.take(16) ?: return@runCatching
+            val seen = mutableSetOf<String>()
+            var cards = 0
             roots.forEach { root ->
                 if (!root.isAttachedToWindow || root.windowVisibility != View.VISIBLE) return@forEach
                 val pending = ArrayDeque<View>()
@@ -405,13 +489,26 @@ object ColorOsDeviceSpaceHook : HookContext() {
                 var visited = 0
                 while (pending.isNotEmpty() && visited++ < 512) {
                     val view = pending.removeFirst()
-                    if (view.javaClass.name == CARD) applyCardBatteryMode(view, shape)
+                    if (!viewDumpDone()) {
+                        val name = view.javaClass.name
+                        if (name.contains("ard", ignoreCase = true) || name.contains("luetooth")) {
+                            seen += name
+                        }
+                    }
+                    if (view.javaClass.name == CARD) {
+                        cards++
+                        applyCardBatteryMode(view, shape)
+                    }
                     if (view is ViewGroup) {
                         repeat(minOf(view.childCount, (512 - visited - pending.size).coerceAtLeast(0))) { index ->
                             pending.add(view.getChildAt(index))
                         }
                     }
                 }
+            }
+            if (!viewDumpDone()) {
+                markViewDumpDone()
+                Log.i(TAG, "Device Space view dump cards=$cards classes=${seen.take(40)}")
             }
         }.onFailure { Log.w(TAG, "Unable to refresh Device Space card battery", it) }
     }

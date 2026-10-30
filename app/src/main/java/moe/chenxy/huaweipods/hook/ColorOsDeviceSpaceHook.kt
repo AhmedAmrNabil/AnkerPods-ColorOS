@@ -246,16 +246,28 @@ object ColorOsDeviceSpaceHook : HookContext() {
     /**
      * 宿主切到 `MULTI` 之后只负责把多段容器显示出来（`k()` 里 `o.VISIBLE` 然后直接 return），
      * 四格数字要自己填。容器是 ViewStub（`id/stub_airpods_multiline_battery`）按需 inflate 的
-     * `layout/include_bluetooth_card_airpods_battery_block`，id 名已用 aapt2 从固件里核对过。
+     * `layout/include_bluetooth_card_airpods_battery_block`，id 名已用 aapt2 从固件里核对过
+     * （见 [ColorOsAirpodsBatteryBlock]）。
      */
     private fun applyMultiBatteryBlock(card: View, triple: ColorOsBatteryTriple) {
-        val slots = ColorOsAirpodsBatteryBlock.slots(triple.left, triple.right, triple.case)
         val root = multiBatteryRoot(card) ?: return
-        bindSlot(root, "airpods_electricity_text", "airpods_electricity_progress", slots.main, charging = false)
-        bindSlot(root, "left_airpods_battery", null, slots.left, charging = false)
-        bindSlot(root, "right_airpods_battery", null, slots.right, charging = false)
-        bindSlot(root, "airpods_box_battery", null, slots.case, charging = false)
-        Log.i(TAG, "Multi battery block main=${slots.main} left=${slots.left} right=${slots.right} case=${slots.case}")
+        val slots = ColorOsAirpodsBatteryBlock.slots(triple.left, triple.right, triple.case)
+        // 先把所有行按"有没有数据"摆好，再填内容：缺的那段整行隐藏，而不是写 0%。
+        val present = slots.map { it.first.label }.toHashSet()
+        listOf(
+            ColorOsAirpodsBatteryBlock.MAIN,
+            ColorOsAirpodsBatteryBlock.LEFT,
+            ColorOsAirpodsBatteryBlock.RIGHT,
+            ColorOsAirpodsBatteryBlock.CASE,
+        ).forEach { slot ->
+            if (slot.label !in present) {
+                slot.container?.let { hostView(root, it)?.visibility = View.GONE }
+            }
+        }
+        slots.forEach { (slot, value) ->
+            bindSlot(root, slot, value)
+            Log.d(TAG, "Multi battery slot=${slot.label} value=$value")
+        }
     }
 
     /** 多段容器：宿主已经 inflate 过就在字段 `o` 里，否则自己把 ViewStub 展开。 */
@@ -267,18 +279,31 @@ object ColorOsDeviceSpaceHook : HookContext() {
         return runCatching { stub.inflate() }.getOrNull()
     }
 
-    private fun bindSlot(root: View, textId: String, progressId: String?, value: Int?, charging: Boolean) {
-        hostView(root, textId)?.let { view ->
+    private fun bindSlot(root: View, slot: ColorOsAirpodsBatteryBlock.Slot, value: Int?) {
+        slot.container?.let { hostView(root, it)?.visibility = View.VISIBLE }
+        hostView(root, slot.label)?.let { view ->
             (view as? TextView)?.text = ColorOsAirpodsBatteryBlock.label(value)
-            view.visibility = if (ColorOsAirpodsBatteryBlock.isPresent(value)) View.VISIBLE else View.GONE
+            view.visibility = View.VISIBLE
         }
-        if (progressId != null) {
-            hostView(root, progressId)?.let { view ->
+        slot.progress?.let { name ->
+            hostView(root, name)?.let { view ->
                 (view as? ProgressBar)?.progress = ColorOsAirpodsBatteryBlock.progress(value)
+                view.visibility = View.VISIBLE
             }
         }
-        hostView(root, "${textId}_charge")?.visibility =
-            if (ColorOsAirpodsBatteryBlock.shouldShowCharging(value, charging)) View.VISIBLE else View.GONE
+        // 充电图标来自我们自己的电量快照时一律隐藏：快照里没有充电位，宁可少画也不画错。
+        slot.charge?.let { name ->
+            hostView(root, name)?.visibility =
+                if (ColorOsAirpodsBatteryBlock.shouldShowCharging(value, charging = false)) {
+                    View.VISIBLE
+                } else {
+                    View.GONE
+                }
+        }
+        slot.low?.let { name ->
+            hostView(root, name)?.visibility =
+                if (ColorOsAirpodsBatteryBlock.shouldShowLow(value)) View.VISIBLE else View.GONE
+        }
     }
 
     private fun hostView(root: View, name: String): View? {
@@ -429,6 +454,10 @@ object ColorOsDeviceSpaceHook : HookContext() {
     private fun heroImage(card: View): ImageView? {
         (getObjectField(card, "g") as? ImageView)?.let { return it }
         val container = getObjectField(card, "o") as? ViewGroup ?: return null
+        // 多段块里宿主留了一个 airpods_image（AirPods 产品渲染），按名字取最稳，取不到再按面积兜底。
+        (hostView(container, ColorOsAirpodsBatteryBlock.PRODUCT_IMAGE) as? ImageView)
+            ?.takeIf { it.isAttachedToWindow }
+            ?.let { return it }
         return largestImageView(container)
     }
 

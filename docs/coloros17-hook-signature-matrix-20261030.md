@@ -138,20 +138,25 @@ ConstraintLayout
 ```
 container_battery_and_hint_airpods
 ├─ device_not_connected_hint_id_airpods
-├─ layout_airpods_max                 ← 主段
-│  ├─ airpods_electricity_progress    (ProgressBar)
-│  ├─ airpods_max_charging_icon       (airpods_charge_max)
+├─ layout_airpods_max                    ← 主段
+│  ├─ airpods_electricity_progress       (ProgressBar)
+│  ├─ airpods_max_charging_icon          (drawable airpods_charge_max)
 │  └─ airpods_electricity_text
 └─ layout_airpods_battery
-   ├─ layout_box    : airpods_box_image / airpods_box_battery / airpods_box_charge / airpods_box_low
-   ├─ layout_left   : left_airpods_image / left_airpods_battery / left_airpods_charge / airpods_left_low
-   └─ layout_right  : right_* 同构
+   ├─ layout_box   : airpods_box_image / airpods_box_battery / airpods_box_charge / airpods_box_low
+   ├─ layout_left  : left_airpods_image / left_airpods_battery / left_airpods_charge / airpods_left_low
+   ├─ layout_right : right_airpods_image / right_airpods_battery / right_airpods_charge / airpods_right_low
+   ├─ view_airpods_battery_line           (分隔线)
+   └─ airpods_image                       ★ 产品图（AirPods 渲染）
 ```
 
-由此推翻上一小节的第 1 条推断：**这块布局里没有任何"产品大图"**，所以"白色带柄 TWS 图 = ViewStub 自带默认图"
-并不成立，那张图是宿主给 AirPods 模板配的产品渲染（来自另一处 ImageView）。
-可以确定的是：`MULTI` 下 `j()` 会把 6 个 `bt_*_imageView` 全部 `GONE`，
-也就是**卡片在该模式下主动不画设备图**。
+关键更正（两次修正后的定论）：这块布局**确实有产品大图**，就是最后那个 `airpods_image`。
+上一轮"白色带柄 TWS 图 = ViewStub 自带默认图"和图省掉一次的"这块里没有大图"都不对；
+真相是 `MULTI` 下宿主把 6 个 `bt_*_imageView` 全 `GONE`（`j()`），屏幕上那张图换成了 `airpods_image`
+里内置的 AirPods 渲染 —— 也就是用户看到的"图不对"。
+
+对策已落到代码：`heroImage()` 在字段 `g` 为空时**先按名字取 `airpods_image`**，取不到才退回"面积最大的
+可见 ImageView"。按名字取是确定的，面积兜底只在本模块或固件换布局时才会用到。
 
 **三段数值的真实来源**
 

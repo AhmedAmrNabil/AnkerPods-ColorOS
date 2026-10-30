@@ -48,8 +48,9 @@ ColorOS 17 的实时通知模板把整张卡（含按钮区）当作一个 `cont
 （`g` = 6 个 `bt_*_imageView` 里被 `mDeviceSecondaryType` 选中的那一个，`n` = `container_battery_and_hint`，
 `o` = `stub_airpods_multiline_battery` 展开出来的多段容器）。
 `k()` 在 `MULTI` 分支里 `0049: g = null`、`0051: return`，并且 `j()` 会把 6 个设备图槽位全部 `GONE`，
-**宿主在该模式下主动不画设备图**；ViewStub 的目标布局是
-`layout/include_bluetooth_card_airpods_battery_block`（四格：主段 / 盒 / 左 / 右），里面没有产品大图。
+卡片在该模式下改画多段块里的 `id/airpods_image` —— 那是一张 **AirPods 产品渲染**，这就是"图不对"的根因。
+多段块布局是 `layout/include_bluetooth_card_airpods_battery_block`（主段 / 盒 / 左 / 右四行 + 产品图），
+模块现在按名字取 `airpods_image` 贴我们自己的图，并按行容器填四段数字。
 三段数值的 DTO 消费者全固件只有 quickapp 首页卡模板（`aa.s7` / `aa.La0`），
 AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `BatteryInfo`。
 指令级证据与完整 id 表见 [Hook 签名矩阵](coloros17-hook-signature-matrix-20261030.md) §2.1 / §2.2。
@@ -101,9 +102,9 @@ AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `Bat
 
 ## 6. 验证与构建证据
 
-- 单测：**662 通过 / 0 失败**（`app/build/test-results/testDebugUnitTest`）
-- Lint：**0 error**（`app/build/reports/lint-results-debug.html`）
-- Release：`:app:assembleRelease` 通过，APK SHA-256 `0780ed4bf006458680f6569800e33a52f71a6e11e457c41f86419c2f1fc68f21`
+- 单测：**664 通过 / 0 失败**（`app/build/test-results/testDebugUnitTest`）
+- Lint：**0 error**（`app/build/reports/lint-results-debug.xml`）
+- Release：`:app:assembleRelease` 通过，APK SHA-256 `5b84eabc8426c3cbb6df5971c090d77719b58dd753a19d922aa0352c085aa110`
 - 实机：`adb install -r` 覆盖安装成功；关键路径截图见 `.local/recon/verify-*.png`
 
 ## 7. 复现命令

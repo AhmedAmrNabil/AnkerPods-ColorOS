@@ -88,11 +88,16 @@ AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `Bat
    多格块的填数逻辑也写好了（§4.8），但还差一次真机确认：`MULTI` 下卡片不再画设备图，
    需要先决定"要不要在这种模式下自己把 FreeClip 图贴回多格块"再打开开关。
 3. **原生三段降噪（`TRANSPORT_HFP_AT` + `+OBUDS`）** —— 需要真机反复试 AT 帧，本轮未动。
-4. **状态栏耳机电池图标** —— ColorOS 17 没有可挂钩点（`deviceplugin.sdk` 只在 SystemUI 内部使用）。
-5. **覆盖安装后宿主进程复用旧资源句柄** —— 日志 `skip notification: module resources unavailable`，
+4. **状态栏耳机电池图标** —— ColorOS 17 移除了蓝牙 UID 的 STATUS_BAR 权限，图标由 SystemUI 自绘，无挂点。
+5. **控制中心设备卡片条 / 流体云种子卡** —— 实证无第三方入口：种子卡通道是 ContentProvider
+   （`com.oplus.pantanal.seedling.serviceLayer.BaseSeedlingCardStrategyProvider`），
+   `checkCallPermission()` 只放行 system uid / SystemUI 自身 uid / 系统应用 / 包名白名单，
+   普通应用申请任何权限都进不去（详见[钩子签名核对表](coloros17-signature-audit-20261030.md) §4）。
+   要做得 hook 进 SystemUI（模块目前没有这个 scope），属独立工程。
+6. **覆盖安装后宿主进程复用旧资源句柄** —— 日志 `skip notification: module resources unavailable`，
    需重启宿主进程才恢复；属加固前的既有现象。本轮把异常从"被 `runCatching` 吞掉"改成逐路径记录
    （§4.9），下次接上手机重装一次就能看到真正的异常类型，再决定是清缓存还是重启宿主。
-6. **通知仍能刷新（真机）** —— 信任校验加固后未在真机复核，待手机接回来第一时间验证。
+7. **通知仍能刷新（真机）** —— 信任校验加固后未在真机复核，待手机接回来第一时间验证。
 
 ## 6. 验证与构建证据
 

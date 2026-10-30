@@ -202,6 +202,10 @@ object ColorOsDeviceSpaceHook : HookContext() {
     /**
      * `QuickCardDeviceData` 的四个 `BatteryInfo` 槽位：left/right 是左右耳，main 放盒子（没有盒子时放较大的那只），
      * min 放最小那一段——固件用它决定低电提示。
+     *
+     * 为什么只在这一层注入：`h()` 内部的电池其实是 `$c.b()` -> `$b.a()/d()` 拿来的，看着更"源头"，
+     * 但 `$b` 不带地址（对所有蓝牙设备生效），注进去会把别的设备卡片写坏；`h()` 返回的 DTO 和
+     * `BlueToothCardView`（有地址字段 `c`）才是唯一带地址作用域的注入面。
      */
     private fun applyCardBattery(data: Any, address: String, shape: HomeCardBatteryShape) {
         if (!MULTI_BATTERY_DTO_ENABLED && !MULTI_BATTERY_CARD_ENABLED) return

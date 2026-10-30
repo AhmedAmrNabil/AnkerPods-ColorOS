@@ -14,7 +14,10 @@ import android.os.Looper
 import android.util.LruCache
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewStub
 import android.widget.ImageView
+import android.widget.ProgressBar
+import android.widget.TextView
 import java.lang.ref.WeakReference
 import java.util.Collections
 import java.util.WeakHashMap
@@ -223,12 +226,61 @@ object ColorOsDeviceSpaceHook : HookContext() {
         try {
             card.javaClass.getMethod("setBatteryDisplayMode", modeClass).invoke(card, mode)
             card.javaClass.getMethod("setBatteryPower", Int::class.javaPrimitiveType).invoke(card, triple.main)
+            applyMultiBatteryBlock(card, triple)
         } catch (error: Throwable) {
             Log.w(TAG, "Unable to switch Device Space card to multi battery", error)
         } finally {
             applyingBattery = false
         }
     }
+
+    /**
+     * 宿主切到 `MULTI` 之后只负责把多段容器显示出来（`k()` 里 `o.VISIBLE` 然后直接 return），
+     * 四格数字要自己填。容器是 ViewStub（`id/stub_airpods_multiline_battery`）按需 inflate 的
+     * `layout/include_bluetooth_card_airpods_battery_block`，id 名已用 aapt2 从固件里核对过。
+     */
+    private fun applyMultiBatteryBlock(card: View, triple: ColorOsBatteryTriple) {
+        val slots = ColorOsAirpodsBatteryBlock.slots(triple.left, triple.right, triple.case)
+        val root = multiBatteryRoot(card) ?: return
+        bindSlot(root, "airpods_electricity_text", "airpods_electricity_progress", slots.main, charging = false)
+        bindSlot(root, "left_airpods_battery", null, slots.left, charging = false)
+        bindSlot(root, "right_airpods_battery", null, slots.right, charging = false)
+        bindSlot(root, "airpods_box_battery", null, slots.case, charging = false)
+        Log.i(TAG, "Multi battery block main=${slots.main} left=${slots.left} right=${slots.right} case=${slots.case}")
+    }
+
+    /** 多段容器：宿主已经 inflate 过就在字段 `o` 里，否则自己把 ViewStub 展开。 */
+    private fun multiBatteryRoot(card: View): View? {
+        (getObjectField(card, "o") as? View)?.let { return it }
+        val id = hostId(card, "stub_airpods_multiline_battery")
+        if (id == 0) return null
+        val stub = card.findViewById<View>(id) as? ViewStub ?: return null
+        return runCatching { stub.inflate() }.getOrNull()
+    }
+
+    private fun bindSlot(root: View, textId: String, progressId: String?, value: Int?, charging: Boolean) {
+        hostView(root, textId)?.let { view ->
+            (view as? TextView)?.text = ColorOsAirpodsBatteryBlock.label(value)
+            view.visibility = if (ColorOsAirpodsBatteryBlock.isPresent(value)) View.VISIBLE else View.GONE
+        }
+        if (progressId != null) {
+            hostView(root, progressId)?.let { view ->
+                (view as? ProgressBar)?.progress = ColorOsAirpodsBatteryBlock.progress(value)
+            }
+        }
+        hostView(root, "${textId}_charge")?.visibility =
+            if (ColorOsAirpodsBatteryBlock.shouldShowCharging(value, charging)) View.VISIBLE else View.GONE
+    }
+
+    private fun hostView(root: View, name: String): View? {
+        val id = hostId(root, name)
+        return if (id == 0) null else runCatching { root.findViewById<View>(id) }.getOrNull()
+    }
+
+    /** 宿主资源 id 按名字取：R 类字段被 R8 改成 `H1`/`P` 这种短名，硬编码不可维护。 */
+    private fun hostId(view: View, name: String): Int = runCatching {
+        view.resources.getIdentifier(name, "id", view.context.packageName)
+    }.getOrDefault(0)
 
     private fun homeCardBatteryShape(dataType: Class<*>): HomeCardBatteryShape {
         val batteryInfoType = findClass(BATTERY_INFO)

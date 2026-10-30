@@ -106,6 +106,75 @@ QuickCardDeviceDataConverter#h(IDevice,$c,$e,$d,Z)  →  QuickCardDeviceData
 再确认三段数值的真实来源（`QuickCardDeviceData` 的 4 个 `BatteryInfo` 到底喂给了谁）**，
 两者都落定之前，`MULTI_BATTERY_CARD_ENABLED` 保持 `false`，卡片维持单值电量。
 
+### 2.2 布局级实证：`MULTI` 容器到底是哪块布局（aapt2 反编译固件）
+
+把 `MyDevices.apk` 的资源表反编译（`aapt2 dump resources` + `aapt2 dump xmltree`）后，
+`R` 类里那些被 R8 改成 `C`/`G`/`H1`/`P` 的短字段名全部还原成了资源名，物证如下。
+
+**卡片根布局 = `layout/devicecard_control_preference_bt`（`res/Tt.xml`）**
+
+```
+ConstraintLayout
+├─ LinearLayout
+│  └─ TextView            id/device_name
+├─ FrameLayout            id/container_battery_and_hint          ← 字段 n（SINGLE 容器）
+│  ├─ include             id/device_not_connected_hint_id        ← 字段 l
+│  ├─ include             id/device_connected_hint_id            ← 字段 m
+│  └─ ConstraintLayout    id/device_electricity_icon             ← 字段 i
+│     └─ LinearLayout     id/device_battery
+│        ├─ ProgressBar   id/device_electricity_progress         ← 字段 j
+│        └─ TextView      id/device_electricity                  ← 字段 k
+├─ ViewStub               id/stub_airpods_multiline_battery      ← 字段 o（MULTI 容器）
+└─ ImageView × 6          id/bt_car / bt_a2dp / bt_heaset / bt_handle / bt_flash / bt_cooperate_headset
+```
+
+**重要更正**：字段 `g` 不是"英雄图"，而是上面 6 个**设备类型图**里被选中的那一个 ——
+`k()` 在 `SINGLE` 分支按 `b`（`mDeviceSecondaryType`，`2008`/`2009` 有特例）做 `packed-switch`，
+把其中一个设成 `VISIBLE` 并存入 `g`，其余 5 个 `GONE`。模块一直往 `g` 贴图之所以有效，
+是因为在 `SINGLE` 下**它就是卡片上唯一的设备图槽位**。
+
+**ViewStub 目标布局 = `layout/include_bluetooth_card_airpods_battery_block`（`res/RX.xml`）**
+
+```
+container_battery_and_hint_airpods
+├─ device_not_connected_hint_id_airpods
+├─ layout_airpods_max                 ← 主段
+│  ├─ airpods_electricity_progress    (ProgressBar)
+│  ├─ airpods_max_charging_icon       (airpods_charge_max)
+│  └─ airpods_electricity_text
+└─ layout_airpods_battery
+   ├─ layout_box    : airpods_box_image / airpods_box_battery / airpods_box_charge / airpods_box_low
+   ├─ layout_left   : left_airpods_image / left_airpods_battery / left_airpods_charge / airpods_left_low
+   └─ layout_right  : right_* 同构
+```
+
+由此推翻上一小节的第 1 条推断：**这块布局里没有任何"产品大图"**，所以"白色带柄 TWS 图 = ViewStub 自带默认图"
+并不成立，那张图是宿主给 AirPods 模板配的产品渲染（来自另一处 ImageView）。
+可以确定的是：`MULTI` 下 `j()` 会把 6 个 `bt_*_imageView` 全部 `GONE`，
+也就是**卡片在该模式下主动不画设备图**。
+
+**三段数值的真实来源**
+
+`QuickCardDeviceData.getBatteryLeft/Right/Main` 在 5 个 dex 里只有两处消费者，都在 quickapp 首页卡模板：
+
+| 消费者 | 行为 |
+| --- | --- |
+| `aa.s7.c(QuickCardDeviceData)` | 三段分别交给 `aa.s7.b(view, BatteryInfo)`，`batteryInfoContainer` 三格 |
+| `aa.La0.b(QuickCardDeviceData)` | `BatteryLottieView.setBatteryInfo(BatteryInfo)` + 一个 TextView（单段 Lottie 电量） |
+
+AirPods 三格块的贴数在 AirPods 插件里（`com.heytap.mydevices.plugin.airpods`）：
+
+| 方法 | 作用 |
+| --- | --- |
+| `core.a.c(BatteryType, int level, int idx, int[] flags)` | `flags[idx] == 4` 判非充电，`level <= 0` 判无效，产出 `BatteryInfo(type, level, charging)` |
+| `core.a.b(List, int[])` | 组装 `TSLItem("batteryCharging_1280_2", boolean)` 上报 |
+| `core.a.f(int, int[])` | 由原始字节数组产出 `List<BatteryInfo>` |
+
+**结论与实现路线**（本轮已按 (b) 落代码，开关仍为 `false`）：
+
+- (a) 把 FreeClip 伪装成 AirPods 走插件路径 —— 需要伪造设备身份，`AirpodsSettingActivity` 会校验并 `finish`，风险高，不做；
+- (b) 宿主 inflate 完多格块后**自己填四格**：按资源名取 id（`ColorOsAirpodsBatteryBlock` +
+  `applyMultiBatteryBlock()`，纯逻辑已有 6 个单测），格式 / 低电阈值 / 充电图标 / 主段落回逻辑都在纯函数里。
 
 ## 3. 方法说明（可复现）
 

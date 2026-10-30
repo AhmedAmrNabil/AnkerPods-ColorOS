@@ -41,13 +41,17 @@ ColorOS 17 的实时通知模板把整张卡（含按钮区）当作一个 `cont
 `Notification.Action` 点击不会派发（同一台机器上 Telegram 的普通通知按钮正常，被提升成实时活动的就不行）。
 因此把卡片 `contentIntent` 改成直达 `PopupActivity`：一次点击即到可改状态的弹窗。
 
-### 3.3 设备空间卡片：`MULTI` 会换布局并丢掉注入的耳机图（dexdump 实证）
+### 3.3 设备空间卡片：`MULTI` 会换布局并丢掉注入的耳机图（dexdump + aapt2 实证）
 
-`BlueToothCardView.k()` 在 `MULTI` 分支里 `0049: g = null`、`0051: return`，**宿主不画英雄图**，
-屏幕上那张是 ViewStub 布局自带的通用 TWS 图；`m()` 的 `MULTI` 分支只读 `ConnectState` 与单值电量。
-三段电量的原生消费方是另一套模板：`aa.un`（`batteryInfoContainer`）→ `aa.s7.b(view, BatteryInfo)` ×
-`getBatteryMain/Left/Right`，以及公开 API `BatteryLottieView.setBatteryInfo(BatteryInfo)`。
-细节与指令级证据见 [Hook 签名矩阵](coloros17-hook-signature-matrix-20261030.md) §2.1。
+`BlueToothCardView` 的根布局是 `layout/devicecard_control_preference_bt`，字段与资源 id 已逐一还原
+（`g` = 6 个 `bt_*_imageView` 里被 `mDeviceSecondaryType` 选中的那一个，`n` = `container_battery_and_hint`，
+`o` = `stub_airpods_multiline_battery` 展开出来的多段容器）。
+`k()` 在 `MULTI` 分支里 `0049: g = null`、`0051: return`，并且 `j()` 会把 6 个设备图槽位全部 `GONE`，
+**宿主在该模式下主动不画设备图**；ViewStub 的目标布局是
+`layout/include_bluetooth_card_airpods_battery_block`（四格：主段 / 盒 / 左 / 右），里面没有产品大图。
+三段数值的 DTO 消费者全固件只有 quickapp 首页卡模板（`aa.s7` / `aa.La0`），
+AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `BatteryInfo`。
+指令级证据与完整 id 表见 [Hook 签名矩阵](coloros17-hook-signature-matrix-20261030.md) §2.1 / §2.2。
 
 ### 3.4 导出的通知接收器不校验发送方（外部可利用）
 
@@ -72,23 +76,26 @@ ColorOS 17 的实时通知模板把整张卡（含按钮区）当作一个 `cont
 | 4.5 | `STATE_TURNING_OFF` 被无条件信任 | `shouldCancelForAdapterState(claimed, actual)`，取不到真实状态不取消 | 单测 `ColorOsLiveAlertAdapterStateTest`（4 例） |
 | 4.6 | 设备空间三段电量显示会丢图 | `heroImage()`：`g == null` 时在多段容器 `o` 内取面积最大的可见 `ImageView` | 代码 + §3.3 实证，待真机开开关验证 |
 | 4.7 | 三段电量数据通路缺失 | `ColorOsPodBatteryStore`（快照 + 选段纯逻辑 + 10 单测）、进程内电量接收者、DTO 电池槽写入 | 单测 `ColorOsPodBatteryStoreTest` |
+| 4.8 | 多段电量块没人填数（`MULTI` 下四格空白） | 布局级实证后新增 `ColorOsAirpodsBatteryBlock`（纯逻辑）+ `applyMultiBatteryBlock()`（按资源名取 id 填四格、展开 ViewStub） | 单测 `ColorOsAirpodsBatteryBlockTest`（6 例）；开关仍 `false`，待真机确认 |
 
 ## 5. 未修 / 已知限制
 
 1. **流体云卡片内的按钮点不动** —— 平台模板限制（整卡一个 `contentIntent`），已用"点卡片开弹窗"绕开，
    不做 hack（伪造 `PendingIntent` 会破坏平台校验）。
 2. **设备空间多段电量未开启** —— `MULTI_BATTERY_CARD_ENABLED = false`。数据面已通，
-   但多段布局的三段数值来源与英雄图落点还差一次真机验证（§3.3 已把下一步锁定到 `aa.s7` / `BatteryLottieView`）。
+   多格块的填数逻辑也写好了（§4.8），但还差一次真机确认：`MULTI` 下卡片不再画设备图，
+   需要先决定"要不要在这种模式下自己把 FreeClip 图贴回多格块"再打开开关。
 3. **原生三段降噪（`TRANSPORT_HFP_AT` + `+OBUDS`）** —— 需要真机反复试 AT 帧，本轮未动。
 4. **状态栏耳机电池图标** —— ColorOS 17 没有可挂钩点（`deviceplugin.sdk` 只在 SystemUI 内部使用）。
 5. **覆盖安装后宿主进程复用旧资源句柄** —— 日志 `skip notification: module resources unavailable`，
    需重启宿主进程才恢复；属加固前的既有现象，未在本轮改动。
+6. **通知仍能刷新（真机）** —— 信任校验加固后未在真机复核，待手机接回来第一时间验证。
 
 ## 6. 验证与构建证据
 
-- 单测：**656 通过 / 0 失败**（`app/build/test-results/testDebugUnitTest`）
+- 单测：**662 通过 / 0 失败**（`app/build/test-results/testDebugUnitTest`）
 - Lint：**0 error**（`app/build/reports/lint-results-debug.html`）
-- Release：`:app:assembleRelease` 通过，APK ≈ 4.72 MB
+- Release：`:app:assembleRelease` 通过，APK SHA-256 `0780ed4bf006458680f6569800e33a52f71a6e11e457c41f86419c2f1fc68f21`
 - 实机：`adb install -r` 覆盖安装成功；关键路径截图见 `.local/recon/verify-*.png`
 
 ## 7. 复现命令

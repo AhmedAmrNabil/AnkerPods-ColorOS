@@ -94,6 +94,8 @@ object ColorOsDeviceSpaceHook : HookContext() {
      */
     private fun registerBatteryReceiver(context: Context) {
         if (batteryReceiver != null) return
+        // 拿到 Context 就把运行时开关接上：三段电量的两个开关读 Settings.Global，改设置几秒内生效。
+        ColorOsBatteryFlags.attach(context)
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val address = intent.getStringExtra("address")?.uppercase()
@@ -189,15 +191,19 @@ object ColorOsDeviceSpaceHook : HookContext() {
     /**
      * 三段电量：**数据面**和**展示面**分开开关，别再用一个开关管两件事。
      *
-     * - [MULTI_BATTERY_DTO_ENABLED]：只往 `QuickCardDeviceData` 的 4 个 `BatteryInfo` 槽位写数据。
+     * - `BIT_DTO`：只往 `QuickCardDeviceData` 的 4 个 `BatteryInfo` 槽位写数据。
      *   实测固件里这些槽位的消费者只有 quickapp 首页卡模板（`aa.s7` / `aa.La0`，见签名矩阵 §2.2），
      *   蓝牙卡片 `BlueToothCardView` 只读单值 `e`，所以单开这一项**不会**改变卡片外观，
      *   是用来验证"详情页/quickapp 卡片是否原生吃这三段"的最小开关。
-     * - [MULTI_BATTERY_CARD_ENABLED]：把卡片视图切到 `MULTI` 并自己填多格块。切过去以后宿主不再画设备图
+     * - `BIT_CARD`：把卡片视图切到 `MULTI` 并自己填多格块。切过去以后宿主不再画设备图
      *   （`j()` 把所有 `bt_*_imageView` 置 GONE），所以这一项必须等"图怎么补"定下来再开。
+     *
+     * 两个开关都是**运行时**读 `Settings.Global/huaweipods_multi_battery`（默认 0 = 全关），
+     * 真机验证时用 `adb shell settings put global huaweipods_multi_battery 1` 直接切，不用重装。
      */
-    private const val MULTI_BATTERY_DTO_ENABLED = false
-    private const val MULTI_BATTERY_CARD_ENABLED = false
+    private fun dtoBatteryEnabled(): Boolean = ColorOsBatteryFlags.dtoEnabled()
+
+    private fun cardBatteryEnabled(): Boolean = ColorOsBatteryFlags.cardEnabled()
 
     /**
      * `QuickCardDeviceData` 的四个 `BatteryInfo` 槽位：left/right 是左右耳，main 放盒子（没有盒子时放较大的那只），
@@ -208,7 +214,7 @@ object ColorOsDeviceSpaceHook : HookContext() {
      * `BlueToothCardView`（有地址字段 `c`）才是唯一带地址作用域的注入面。
      */
     private fun applyCardBattery(data: Any, address: String, shape: HomeCardBatteryShape) {
-        if (!MULTI_BATTERY_DTO_ENABLED && !MULTI_BATTERY_CARD_ENABLED) return
+        if (!dtoBatteryEnabled() && !cardBatteryEnabled()) return
         val triple = colorOsBatteryTriple(ColorOsPodBatteryStore.get(address)) ?: return
         // 缺的段不写：宿主对没写过的槽位保持自己的处理，塞 0 反而会显示成"0%"。
         triple.left?.let { setObjectField(data, "batteryLeft", shape.info(ColorOsBatteryTriple.CHANNEL_LEFT, it)) }
@@ -229,7 +235,7 @@ object ColorOsDeviceSpaceHook : HookContext() {
 
     /** 卡片视图侧：宿主按 `SINGLE` 只画一个数字，这里在它 bind 完以后切成 `MULTI`。 */
     private fun applyCardBatteryMode(card: View, shape: HomeCardBatteryShape) {
-        if (!MULTI_BATTERY_CARD_ENABLED) return
+        if (!cardBatteryEnabled()) return
         if (applyingBattery) return
         val modeClass = shape.viewModeClass ?: return
         val address = getObjectField(card, "c") as? String ?: return

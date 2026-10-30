@@ -81,6 +81,7 @@ AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `Bat
 | 4.8 | 多段电量块没人填数（`MULTI` 下四格空白），且充电/低电图标名是拼错的 | 布局级实证后新增 `ColorOsAirpodsBatteryBlock`（`Slot` 表：行容器 / 数字 / 进度条 / 充电 / 低电五项逐一显式声明）+ `applyMultiBatteryBlock()`（按行填数、缺段整行隐藏、展开 ViewStub） | 单测 `ColorOsAirpodsBatteryBlockTest`（8 例，含"槽位 id 必须与固件布局逐字一致"）；开关仍 `false` |
 | 4.9 | `module resources unavailable` 只剩一句日志，查不出原因 | `ModuleResourceResolver.resources()` 改成三条路径各自尝试、各自记录异常（同路径只报一次），最后兜底 `getResourcesForApplication` | 代码；本次改动后重装即可在日志里看到真实异常类型 |
 | 4.10 | 单耳离线就整卡没有电量（FreeClip 一只耳在盒里是常态） | `ColorOsBatteryTriple` 三段全部改为可空、只要求"至少一段在线"；缺的 DTO 槽位不写（不塞 0），`isSupportMutiBattery` 改为"≥2 段"才为真，单段时不强切 `MULTI` 布局 | 单测 `triple keeps whatever part is online`、`isMulti needs at least two parts` |
+| 4.11 | 三段电量的开关是编译期常量，验证一种组合就要重装 + 重启宿主 | 改成运行时 `Settings.Global/huaweipods_multi_battery` 位掩码（bit0 = DTO，bit1 = 卡片），3 秒 TTL 缓存，读取失败保留上次值、默认全关 | 单测 `ColorOsBatteryFlagsTest`（5 例）；命令见 §7 |
 
 ## 5. 未修 / 已知限制
 
@@ -103,9 +104,9 @@ AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `Bat
 
 ## 6. 验证与构建证据
 
-- 单测：**665 通过 / 0 失败**（`app/build/test-results/testDebugUnitTest`）
+- 单测：**670 通过 / 0 失败**（`app/build/test-results/testDebugUnitTest`）
 - Lint：**0 error**（`app/build/reports/lint-results-debug.xml`）
-- Release：`:app:assembleRelease` 通过，APK SHA-256 `03b3b76831b2a7410fd61a59c07c859cd2acef1c499a92c9724164f2822e831d`
+- Release：`:app:assembleRelease` 通过，APK SHA-256 `46ab8f5804cf8de7caeff6caf02f1eba39b846b0292e92529147dfdc918746aa`
 - 实机：`adb install -r` 覆盖安装成功；关键路径截图见 `.local/recon/verify-*.png`
 
 ## 7. 复现命令
@@ -124,6 +125,11 @@ adb -s 127.0.0.1:18583 shell "am start -n com.heytap.mydevices/com.oplus.mydevic
 adb -s 127.0.0.1:18583 shell "svc bluetooth disable"; Start-Sleep 3
 adb -s 127.0.0.1:18583 shell "svc bluetooth enable"
 adb -s 127.0.0.1:18583 shell "dumpsys window | grep -m1 mCurrentFocus"   # 期望 DialogActivity
+
+# 三段电量的两个开关：运行时切，不用重装（默认 0 = 全关）
+adb -s 127.0.0.1:18583 shell settings put global huaweipods_multi_battery 1   # 只写 DTO
+adb -s 127.0.0.1:18583 shell settings put global huaweipods_multi_battery 3   # DTO + 卡片 MULTI
+adb -s 127.0.0.1:18583 shell settings put global huaweipods_multi_battery 0   # 回滚
 
 # 看模块日志
 adb -s 127.0.0.1:18583 shell 'su -c "tail -n 200 /data/adb/lspd/log/modules_*.log"'

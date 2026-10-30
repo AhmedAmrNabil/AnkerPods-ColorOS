@@ -2,7 +2,7 @@
 
 对象：`ByteJuno/HuaweiPods-ColorOS`（1.9.3.0 / versionCode 29）
 实机：OnePlus PLK110（`PLK110_17.0.0.105(CN01)`，API 37，ColorOS 17），LSPosed 7927 / libxposed API 102，adbd `127.0.0.1:18583`（root via `su -c`）
-配套文档：[深度适配设计](coloros17-deep-adaptation-20261030.md)、[Hook 签名矩阵](coloros17-hook-signature-matrix-20261030.md)
+配套文档：[深度适配设计](coloros17-deep-adaptation-20261030.md)、[Hook 签名矩阵](coloros17-hook-signature-matrix-20261030.md)、[钩子签名核对表](coloros17-signature-audit-20261030.md)
 
 ## 1. 结论摘要
 
@@ -21,7 +21,8 @@
 1. **静态测绘**：从实机拉取 5 个宿主 APK（Bluetooth / MyDevices / AccessoryFramework / SystemUI / WirelessSettings），
    用 `dexdump -d` 反汇编 + 自写脚本（`.local/recon/tools/`）生成类/方法/字段表与 smali 级反汇编。
 2. **签名核对**：把模块里所有反射目标（`findClass` / `getMethod` / `getDeclaredField`）逐条与固件 dump 对照，
-   结论见 [Hook 签名矩阵](coloros17-hook-signature-matrix-20261030.md) §1（本轮没有发现被固件改签名而断掉的钩子）。
+   结论见 [钩子签名核对表](coloros17-signature-audit-20261030.md)：10 个宿主类全部存在、0 断链
+   （核对脚本 `tools/audit-signatures.ps1` 随仓库分发，可重跑）。
 3. **实机验证**：`adb` 触发 + `logcat` / LSPosed modules 日志 + `dumpsys notification` + 截图，
    每条结论都留了可复现命令与截图（`.local/recon/`，已 gitignore）。
 4. **构建门禁**：`assembleRelease` + `testDebugUnitTest` + `lintDebug` 全绿才认为改动可交付。

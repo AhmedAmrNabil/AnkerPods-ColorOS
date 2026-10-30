@@ -109,6 +109,11 @@ object HuaweiPodsBroadcastTrustPolicy {
             HuaweiPodsAction.ACTION_HUAWEI_LEGACY_DEBUG_SEND,
             HuaweiPodsAction.ACTION_COLOROS_POPUP_HOST_PROBE,
             HuaweiPodsAction.ACTION_PREVIEW_LOW_BATTERY_REMINDER,
+            // 这两个是"命令通知宿主重建/取消那条耳机卡片"，语义是对宿主的控制指令而不是蓝牙状态上报。
+            // 发送方可以是模块 App（设置页/弹窗）也可以是蓝牙进程自己，所以归 APP_CONTROL；
+            // 归到 BLUETOOTH_STATE 的话只信 com.android.bluetooth，App 侧触发就会被自己拒掉。
+            HuaweiPodsAction.ACTION_UPDATE_PODS_NOTIFICATION,
+            HuaweiPodsAction.ACTION_CANCEL_PODS_NOTIFICATION,
             HuaweiPodsAction.ACTION_GET_PODS_MAC ->
                 BroadcastActionDomain.APP_CONTROL
 
@@ -130,9 +135,7 @@ object HuaweiPodsBroadcastTrustPolicy {
             HuaweiPodsAction.ACTION_MODULE_MI_BLUETOOTH_SERVICE_ALIVE,
             HuaweiPodsAction.ACTION_COLOROS_POPUP_HOST_READY,
             HuaweiPodsAction.ACTION_PODS_MAC_RECEIVED,
-            HuaweiPodsAction.ACTION_SHOW_PODS_UI,
-            HuaweiPodsAction.ACTION_UPDATE_PODS_NOTIFICATION,
-            HuaweiPodsAction.ACTION_CANCEL_PODS_NOTIFICATION ->
+            HuaweiPodsAction.ACTION_SHOW_PODS_UI ->
                 BroadcastActionDomain.BLUETOOTH_STATE
 
             // 智慧音频组件 Action

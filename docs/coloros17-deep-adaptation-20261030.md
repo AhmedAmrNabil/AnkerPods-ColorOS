@@ -228,3 +228,15 @@ LSPosedFramework: (com.android.bluetooth)[…,HuaweiPods-HuaweiHfp,…] Rejected
 
 另一处：`routeFor()` 把 `getRemoteDevice(...).name` 也包在同一个 `runCatching` 里，
 宿主进程没 `BLUETOOTH_CONNECT` 时整条解析失败 → 图永远退回原生。现在名字只当辅助，取不到就用 prefs 里的路由。
+
+### 5.5 通知接收器的信任缺口（外部可触发，已收口）
+
+`MiBluetoothToastHook` 的通知接收器是 `RECEIVER_EXPORTED`，处理
+`UPDATE_PODS_NOTIFICATION` / `CANCEL_PODS_NOTIFICATION` 时原本**不看发送方**：
+任何应用发一条带 `BatteryParams` + `BluetoothDevice` 的广播，就能在通知栏伪造一张耳机卡片，
+或者把真实通知刷掉。现在：
+
+- 接收器开头走 `HuaweiPodsBroadcastTrustPolicy.shouldAcceptBroadcast()`，裸广播（`sentFromPackage = null`）直接丢；
+- 这两个 action 的域从 `BLUETOOTH_STATE` 改到 `APP_CONTROL`（模块 App 也会发，只信蓝牙进程会误伤自己）；
+- 相关发送方（`MiuiStrongToastUtil`、`PodImageChangeNotifier`、`MainUI.broadcastConfigChanged`）
+  统一改成共享身份发送，否则加了校验之后会把自己拦掉。

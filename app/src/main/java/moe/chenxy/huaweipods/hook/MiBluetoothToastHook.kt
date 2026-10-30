@@ -25,6 +25,7 @@ import android.os.PowerManager
 import moe.chenxy.huaweipods.utils.ModuleResourceResolver
 import moe.chenxy.huaweipods.utils.PodImageLoader
 import moe.chenxy.huaweipods.utils.notificationDisplayName
+import moe.chenxy.huaweipods.broadcast.HuaweiPodsBroadcastTrustPolicy
 import moe.chenxy.huaweipods.config.ConfigManager
 import moe.chenxy.huaweipods.config.DeviceRoutePrefs
 import moe.chenxy.huaweipods.config.NotificationPresentationPolicy
@@ -638,6 +639,17 @@ object MiBluetoothToastHook : HookContext() {
                     override fun onReceive(receiverContext: Context?, receivedIntent: Intent?) {
                         runCatching {
                             val intent = receivedIntent ?: return@runCatching
+                            // 这个接收者是 EXPORTED 的，而 UPDATE/CANCEL_PODS_NOTIFICATION 能直接决定
+                            // 通知栏上那张"耳机卡片"的内容，必须按 Action 域做 fail-closed 身份校验：
+                            // 之前这里完全不看发送方，任何应用都能伪造一张假的电量通知。
+                            val sender = runCatching { sentFromPackage }.getOrNull()
+                            if (!HuaweiPodsBroadcastTrustPolicy.shouldAcceptBroadcast(intent.action, sender)) {
+                                Log.w(
+                                    "HuaweiPods",
+                                    "Dropped untrusted notification broadcast action=${intent.action} sender=$sender",
+                                )
+                                return@runCatching
+                            }
                             when (HuaweiPodsAction.canonical(intent.action)) {
                                 HuaweiPodsAction.ACTION_PODS_UI_INIT -> {
                                     if (!ModuleResourceResolver.isCurrentModuleBuild(context)) {

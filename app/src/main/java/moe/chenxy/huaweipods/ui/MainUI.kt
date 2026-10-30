@@ -1479,7 +1479,8 @@ private fun broadcastConfigChanged(context: Context, packageName: String) {
     Intent(HuaweiPodsAction.ACTION_CONFIG_CHANGED).apply {
         setPackage(packageName)
         addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-        context.sendBroadcast(this)
+        // 蓝牙进程侧按 Action 域 fail-closed（INTERNAL 只认本模块包名），必须共享发送方身份。
+        context.sendIdentitySharingBroadcast(this)
     }
 }
 

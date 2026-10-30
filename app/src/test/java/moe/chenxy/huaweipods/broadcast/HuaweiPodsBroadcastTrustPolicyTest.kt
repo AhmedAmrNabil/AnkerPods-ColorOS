@@ -314,4 +314,25 @@ class HuaweiPodsBroadcastTrustPolicyTest {
             }
         }
     }
+
+    /**
+     * 通知宿主的两个"重建/取消耳机卡片"指令归 APP_CONTROL：
+     * 模块 App 与蓝牙进程都会发，归 BLUETOOTH_STATE 会把 App 自己发的拦掉。
+     * 但它们仍然必须 fail-closed —— 未共享身份的裸广播（sender=null）一律拒。
+     */
+    @Test fun podsNotificationCommandsAreAppControlAndFailClosed() {
+        val actions = listOf(
+            HuaweiPodsAction.ACTION_UPDATE_PODS_NOTIFICATION,
+            HuaweiPodsAction.ACTION_CANCEL_PODS_NOTIFICATION,
+        )
+        for (action in actions) {
+            assertEquals(BroadcastActionDomain.APP_CONTROL, HuaweiPodsBroadcastTrustPolicy.resolveDomain(action))
+            assertTrue(HuaweiPodsBroadcastTrustPolicy.shouldAcceptBroadcast(
+                action, HuaweiPodsBroadcastTrustPolicy.PACKAGE_APP))
+            assertTrue(HuaweiPodsBroadcastTrustPolicy.shouldAcceptBroadcast(
+                action, HuaweiPodsBroadcastTrustPolicy.PACKAGE_BLUETOOTH))
+            assertFalse("未共享身份的广播必须被拒", HuaweiPodsBroadcastTrustPolicy.shouldAcceptBroadcast(action, null))
+            assertFalse(HuaweiPodsBroadcastTrustPolicy.shouldAcceptBroadcast(action, "com.random.sender"))
+        }
+    }
 }

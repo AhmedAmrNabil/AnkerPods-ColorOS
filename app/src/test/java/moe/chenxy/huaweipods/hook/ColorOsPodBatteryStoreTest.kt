@@ -2,7 +2,9 @@ package moe.chenxy.huaweipods.hook
 
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ColorOsPodBatteryStoreTest {
@@ -62,14 +64,30 @@ class ColorOsPodBatteryStoreTest {
     }
 
     @Test
-    fun `triple requires both buds online`() {
+    fun `triple keeps whatever part is online`() {
         assertNull(colorOsBatteryTriple(null))
-        assertNull(colorOsBatteryTriple(pod(leftConnected = false)))
-        assertNull(colorOsBatteryTriple(pod(rightConnected = false)))
-        val triple = triple(pod())
-        assertEquals(100, triple.left)
-        assertEquals(90, triple.right)
-        assertEquals(50, triple.case ?: -1)
+        // 一只耳在盒里不报电量：剩下的段照样能用，缺的段是 null。
+        val onlyRight = triple(pod(leftConnected = false))
+        assertNull(onlyRight.left)
+        assertEquals(90, onlyRight.right)
+        assertEquals(50, onlyRight.case ?: -1)
+        assertTrue(onlyRight.isMulti)
+
+        val onlyLeft = triple(pod(rightConnected = false, caseConnected = false))
+        assertEquals(100, onlyLeft.left)
+        assertNull(onlyLeft.right)
+        assertNull(onlyLeft.case)
+        assertFalse(onlyLeft.isMulti)
+
+        // 全场离线才作废。
+        assertNull(colorOsBatteryTriple(pod(leftConnected = false, rightConnected = false, caseConnected = false)))
+    }
+
+    @Test
+    fun `isMulti needs at least two parts`() {
+        assertTrue(triple(pod()).isMulti)
+        assertTrue(triple(pod(caseConnected = false)).isMulti)
+        assertFalse(triple(pod(rightConnected = false, caseConnected = false)).isMulti)
     }
 
     @Test

@@ -22,16 +22,27 @@ internal data class ColorOsPodBattery(
 /** 卡片的一段电量；[channel] 取 `BatteryType` 的常量名（LEFT / RIGHT / BOX）。 */
 internal data class ColorOsBatteryPart(val channel: String, val value: Int)
 
-/** 卡片三段展示需要的三个数字；左右耳缺一段就不进入 MULTI 模式。 */
+/**
+ * 卡片三段展示需要的数字；**缺失的段用 null 表示**。
+ *
+ * 之前的版本要求左右耳都在线才算有效，结果 FreeClip 最常见的状态——一只耳在盒里、只报另一只——
+ * 直接拿不到任何电量。现在只要有一段在线就成立，缺的段由上层按行隐藏。
+ */
 internal data class ColorOsBatteryTriple(
-    val left: Int,
-    val right: Int,
+    val left: Int?,
+    val right: Int?,
     val case: Int?,
 ) {
+    init {
+        require(left != null || right != null || case != null) {
+            "a triple needs at least one part"
+        }
+    }
+
     val parts: List<ColorOsBatteryPart>
         get() = buildList {
-            add(ColorOsBatteryPart(CHANNEL_LEFT, left))
-            add(ColorOsBatteryPart(CHANNEL_RIGHT, right))
+            left?.let { add(ColorOsBatteryPart(CHANNEL_LEFT, it)) }
+            right?.let { add(ColorOsBatteryPart(CHANNEL_RIGHT, it)) }
             case?.let { add(ColorOsBatteryPart(CHANNEL_BOX, it)) }
         }
 
@@ -45,6 +56,9 @@ internal data class ColorOsBatteryTriple(
 
     val minimum: Int get() = minPart.value
 
+    /** 至少两段才算"多段"，一段的时候不值得让宿主切多段布局。 */
+    val isMulti: Boolean get() = parts.size >= 2
+
     companion object {
         const val CHANNEL_LEFT = "LEFT"
         const val CHANNEL_RIGHT = "RIGHT"
@@ -54,12 +68,11 @@ internal data class ColorOsBatteryTriple(
 
 internal fun colorOsBatteryTriple(pod: ColorOsPodBattery?): ColorOsBatteryTriple? {
     if (pod == null) return null
-    if (!pod.leftConnected || !pod.rightConnected) return null
-    return ColorOsBatteryTriple(
-        left = pod.left.coerceIn(0, 100),
-        right = pod.right.coerceIn(0, 100),
-        case = if (pod.caseConnected) pod.case.coerceIn(0, 100) else null,
-    )
+    val left = pod.left.takeIf { pod.leftConnected }?.coerceIn(0, 100)
+    val right = pod.right.takeIf { pod.rightConnected }?.coerceIn(0, 100)
+    val case = pod.case.takeIf { pod.caseConnected }?.coerceIn(0, 100)
+    if (left == null && right == null && case == null) return null
+    return ColorOsBatteryTriple(left, right, case)
 }
 
 internal object ColorOsPodBatteryStore {

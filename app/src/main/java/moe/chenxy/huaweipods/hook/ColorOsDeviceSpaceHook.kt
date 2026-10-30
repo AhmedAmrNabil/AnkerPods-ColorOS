@@ -210,16 +210,21 @@ object ColorOsDeviceSpaceHook : HookContext() {
     private fun applyCardBattery(data: Any, address: String, shape: HomeCardBatteryShape) {
         if (!MULTI_BATTERY_DTO_ENABLED && !MULTI_BATTERY_CARD_ENABLED) return
         val triple = colorOsBatteryTriple(ColorOsPodBatteryStore.get(address)) ?: return
+        // 缺的段不写：宿主对没写过的槽位保持自己的处理，塞 0 反而会显示成"0%"。
+        triple.left?.let { setObjectField(data, "batteryLeft", shape.info(ColorOsBatteryTriple.CHANNEL_LEFT, it)) }
+        triple.right?.let { setObjectField(data, "batteryRight", shape.info(ColorOsBatteryTriple.CHANNEL_RIGHT, it)) }
         val third = triple.case
             ?.let { ColorOsBatteryPart(ColorOsBatteryTriple.CHANNEL_BOX, it) }
             ?: triple.mainPart
-        setObjectField(data, "batteryLeft", shape.info(ColorOsBatteryTriple.CHANNEL_LEFT, triple.left))
-        setObjectField(data, "batteryRight", shape.info(ColorOsBatteryTriple.CHANNEL_RIGHT, triple.right))
         setObjectField(data, "batteryMain", shape.info(third.channel, third.value))
         setObjectField(data, "batteryMin", shape.info(triple.minPart.channel, triple.minPart.value))
-        setObjectField(data, "isSupportMutiBattery", true)
+        // 只有一段时告诉宿主"不支持多段"，免得它自己切多段布局后显示成空块。
+        setObjectField(data, "isSupportMutiBattery", triple.isMulti)
         setObjectField(data, "isShowBattery", true)
-        Log.i(TAG, "Device Space card battery left=${triple.left} right=${triple.right} case=${triple.case}")
+        Log.i(
+            TAG,
+            "Device Space card battery left=${triple.left} right=${triple.right} case=${triple.case} multi=${triple.isMulti}",
+        )
     }
 
     /** 卡片视图侧：宿主按 `SINGLE` 只画一个数字，这里在它 bind 完以后切成 `MULTI`。 */
@@ -229,6 +234,8 @@ object ColorOsDeviceSpaceHook : HookContext() {
         val modeClass = shape.viewModeClass ?: return
         val address = getObjectField(card, "c") as? String ?: return
         val triple = colorOsBatteryTriple(ColorOsPodBatteryStore.get(address)) ?: return
+        // 一段电量切多段布局只会得到一块空着的模板，不值得切。
+        if (!triple.isMulti) return
         val mode = runCatching { modeClass.getMethod("valueOf", String::class.java).invoke(null, "MULTI") }
             .getOrNull() ?: return
         applyingBattery = true

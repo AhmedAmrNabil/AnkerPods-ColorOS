@@ -176,6 +176,19 @@ AirPods 三格块的贴数在 AirPods 插件里（`com.heytap.mydevices.plugin.a
 - (b) 宿主 inflate 完多格块后**自己填四格**：按资源名取 id（`ColorOsAirpodsBatteryBlock` +
   `applyMultiBatteryBlock()`，纯逻辑已有 6 个单测），格式 / 低电阈值 / 充电图标 / 主段落回逻辑都在纯函数里。
 
+**quickapp 卡片视图的归属（`aa.un` / `aa.m00`）**
+
+`aa.s7` 三格渲染器只被一个视图使用：`aa.un`（`ConstraintLayout`，字段 `j` = `mainImage`、`u` =
+`batteryInfoContainer`、`e` = `aa.Ln` 图片加载包装、`B`/`C`/`D` 图+文案）。它由工厂
+`aa.m00.d(Context, QuickCardDeviceData) -> aa.un` 创建，而 `aa.m00` 的 `b/c/d` 在整个 APK
+（5 个 dex）里**没有任何调用方** —— 说明这条 quickapp 卡片链是由动态插件侧反射/跨 APK 调用的，
+本 APK 只提供实现。因此：
+
+- 想确认"详情页三段电量是不是走 quickapp 卡片"，只能上真机看（模块日志里 `aa.m00.d` 是否被调到）；
+- 在不碰真机的前提下，把数据面和展示面拆成两个开关是唯一安全的推进方式：
+  `MULTI_BATTERY_DTO_ENABLED`（只写 DTO 的 4 个 `BatteryInfo` 槽位，卡片只读单值 `e`，理论上不改外观）
+  与 `MULTI_BATTERY_CARD_ENABLED`（切卡片视图到 `MULTI` + 自填多格块），两者默认都关。
+
 ## 3. 方法说明（可复现）
 
 ```powershell

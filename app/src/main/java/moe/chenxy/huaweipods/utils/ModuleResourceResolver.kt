@@ -16,15 +16,50 @@ object ModuleResourceResolver {
         hotReloadApplicationInfo = moduleApplicationInfo.takeIf { hotReloadEnabled }
     }
 
-    /** 资源也固定到 API 102 当前代 APK，避免长期宿主进程复用旧资源缓存。 */
-    fun resources(hostContext: Context): Resources? = runCatching {
-        hotReloadApplicationInfo?.let { applicationInfo ->
-            hostContext.packageManager.getResourcesForApplication(applicationInfo)
-        } ?: hostContext.createPackageContext(
+    /**
+     * 资源也固定到 API 102 当前代 APK，避免长期宿主进程复用旧资源缓存。
+     *
+     * 覆盖安装后宿主进程里这两条路径都可能抛异常（日志里表现为
+     * `skip notification: module resources unavailable` 而通知一直不出现）。
+     * 早期实现用 `runCatching{}.getOrNull()` 把异常吞掉了，只能看到"拿不到"，
+     * 看不到**为什么**拿不到。这里改成：每条路径各自尝试、各自记录异常，
+     * 同一条路径只在首次失败时打一条日志（避免电量刷新时刷屏）。
+     */
+    fun resources(hostContext: Context): Resources? {
+        val applicationInfo = hotReloadApplicationInfo
+        if (applicationInfo != null) {
+            attempt("framework ApplicationInfo", hostContext) {
+                hostContext.packageManager.getResourcesForApplication(applicationInfo)
+            }?.let { return it }
+        }
+        attempt("createPackageContext", hostContext) {
+            hostContext.createPackageContext(
                 BuildConfig.APPLICATION_ID,
                 Context.CONTEXT_IGNORE_SECURITY,
             ).resources
-    }.getOrNull()
+        }?.let { return it }
+        // 最后一条兜底：直接按包名问 PM 要资源，绕过 createPackageContext 的 LoadedApk 缓存。
+        return attempt("getResourcesForApplication", hostContext) {
+            hostContext.packageManager.getResourcesForApplication(BuildConfig.APPLICATION_ID)
+        }
+    }
+
+    private inline fun attempt(
+        path: String,
+        hostContext: Context,
+        block: () -> Resources,
+    ): Resources? = try {
+        block()
+    } catch (error: Throwable) {
+        if (reported.add(path)) {
+            android.util.Log.w(
+                TAG,
+                "Module resources via $path failed for host ${hostContext.packageName}",
+                error,
+            )
+        }
+        null
+    }
 
     fun isCurrentModuleBuild(hostContext: Context): Boolean {
         hotReloadApplicationInfo?.let { applicationInfo ->
@@ -47,6 +82,13 @@ object ModuleResourceResolver {
 
     internal fun moduleBuildMatches(installedBuildId: String?, hookBuildId: String): Boolean =
         !installedBuildId.isNullOrBlank() && installedBuildId == hookBuildId
+
+    private const val TAG = "HuaweiPods-Resources"
+
+    /** 同一进程内每条取资源路径只抱怨一次。 */
+    private val reported = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
+    )
 
     private const val MODULE_BUILD_ID_META_DATA =
         "io.github.artifical0.huaweipods.coloros.MODULE_BUILD_ID"

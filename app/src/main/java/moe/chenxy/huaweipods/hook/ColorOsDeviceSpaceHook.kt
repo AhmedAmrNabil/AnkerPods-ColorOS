@@ -187,11 +187,16 @@ object ColorOsDeviceSpaceHook : HookContext() {
     }
 
     /**
-     * 三段电量的开关。实测（2026-10-30 18:00）宿主一旦进入 `MULTI` 展示模式，卡片会换成它自己的
-     * 多段布局，并把耳机图换成宿主内置的通用 TWS 图（白色带柄，不是 FreeClip），我们注入的
-     * `ImageView`（字段 `g`）不再是可见的那一个，于是"图不对 + 电量还是单值"。
-     * 在多段布局的取图路径查清之前保持关闭，只保留数据通路和纯逻辑单测。
+     * 三段电量：**数据面**和**展示面**分开开关，别再用一个开关管两件事。
+     *
+     * - [MULTI_BATTERY_DTO_ENABLED]：只往 `QuickCardDeviceData` 的 4 个 `BatteryInfo` 槽位写数据。
+     *   实测固件里这些槽位的消费者只有 quickapp 首页卡模板（`aa.s7` / `aa.La0`，见签名矩阵 §2.2），
+     *   蓝牙卡片 `BlueToothCardView` 只读单值 `e`，所以单开这一项**不会**改变卡片外观，
+     *   是用来验证"详情页/quickapp 卡片是否原生吃这三段"的最小开关。
+     * - [MULTI_BATTERY_CARD_ENABLED]：把卡片视图切到 `MULTI` 并自己填多格块。切过去以后宿主不再画设备图
+     *   （`j()` 把所有 `bt_*_imageView` 置 GONE），所以这一项必须等"图怎么补"定下来再开。
      */
+    private const val MULTI_BATTERY_DTO_ENABLED = false
     private const val MULTI_BATTERY_CARD_ENABLED = false
 
     /**
@@ -199,7 +204,7 @@ object ColorOsDeviceSpaceHook : HookContext() {
      * min 放最小那一段——固件用它决定低电提示。
      */
     private fun applyCardBattery(data: Any, address: String, shape: HomeCardBatteryShape) {
-        if (!MULTI_BATTERY_CARD_ENABLED) return
+        if (!MULTI_BATTERY_DTO_ENABLED && !MULTI_BATTERY_CARD_ENABLED) return
         val triple = colorOsBatteryTriple(ColorOsPodBatteryStore.get(address)) ?: return
         val third = triple.case
             ?.let { ColorOsBatteryPart(ColorOsBatteryTriple.CHANNEL_BOX, it) }

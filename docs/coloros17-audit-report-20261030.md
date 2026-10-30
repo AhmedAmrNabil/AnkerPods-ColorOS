@@ -77,6 +77,7 @@ AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `Bat
 | 4.6 | 设备空间三段电量显示会丢图 | `heroImage()`：`g == null` 时在多段容器 `o` 内取面积最大的可见 `ImageView` | 代码 + §3.3 实证，待真机开开关验证 |
 | 4.7 | 三段电量数据通路缺失 | `ColorOsPodBatteryStore`（快照 + 选段纯逻辑 + 10 单测）、进程内电量接收者、DTO 电池槽写入 | 单测 `ColorOsPodBatteryStoreTest` |
 | 4.8 | 多段电量块没人填数（`MULTI` 下四格空白） | 布局级实证后新增 `ColorOsAirpodsBatteryBlock`（纯逻辑）+ `applyMultiBatteryBlock()`（按资源名取 id 填四格、展开 ViewStub） | 单测 `ColorOsAirpodsBatteryBlockTest`（6 例）；开关仍 `false`，待真机确认 |
+| 4.9 | `module resources unavailable` 只剩一句日志，查不出原因 | `ModuleResourceResolver.resources()` 改成三条路径各自尝试、各自记录异常（同路径只报一次），最后兜底 `getResourcesForApplication` | 代码；本次改动后重装即可在日志里看到真实异常类型 |
 
 ## 5. 未修 / 已知限制
 
@@ -88,7 +89,8 @@ AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `Bat
 3. **原生三段降噪（`TRANSPORT_HFP_AT` + `+OBUDS`）** —— 需要真机反复试 AT 帧，本轮未动。
 4. **状态栏耳机电池图标** —— ColorOS 17 没有可挂钩点（`deviceplugin.sdk` 只在 SystemUI 内部使用）。
 5. **覆盖安装后宿主进程复用旧资源句柄** —— 日志 `skip notification: module resources unavailable`，
-   需重启宿主进程才恢复；属加固前的既有现象，未在本轮改动。
+   需重启宿主进程才恢复；属加固前的既有现象。本轮把异常从"被 `runCatching` 吞掉"改成逐路径记录
+   （§4.9），下次接上手机重装一次就能看到真正的异常类型，再决定是清缓存还是重启宿主。
 6. **通知仍能刷新（真机）** —— 信任校验加固后未在真机复核，待手机接回来第一时间验证。
 
 ## 6. 验证与构建证据

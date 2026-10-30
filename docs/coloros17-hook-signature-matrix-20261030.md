@@ -59,11 +59,53 @@ QuickCardDeviceDataConverter#h(IDevice,$c,$e,$d,Z)  →  QuickCardDeviceData
 再把卡片的 `f` 设成 `MULTI`，设备空间首页卡片就会按系统原生样式显示左 / 右 / 盒三段电量**，
 不需要碰 protobuf 的 `ProtocolDeviceViewData`，也不需要 `deviceplugin.sdk`（那套确实只在 SystemUI 里）。
 
-风险点（下一轮必须带验证再做）：
+### 2.1 真机打过一次，翻车了：`MULTI` 会把英雄图让给 ViewStub（dexdump 实证）
 
-1. `BatteryInfo` 全是私有字段且只有 `private BatteryInfo(...)` 构造 —— 要反射构造，或找它的 `Companion`；
-2. `MULTI` 模式对 `batteryMain` / `batteryMin` 的语义（盒电是 `BOX` 还是 `MAIN`）需要真机目视确认，填错会把主电量显示成 0；
-3. 宿主可能在绑定后再次调用 `setBatteryPower` 覆盖，需要 hook 之后在主线程补一次。
+按上面那条路做完、装到 PLK110 上，结果是"耳机图变成白色带柄的通用 TWS 图，电量还是单值"。
+把 `MyDevices.apk!classes.dex` 用 `dexdump -d` 反汇编后，`BlueToothCardView` 的内部结构如下
+（`.local/recon/dex/mydevices_classes_disasm.txt`，类起始 `line 1344960`）：
+
+| 字段 | 类型 | 作用 |
+| --- | --- | --- |
+| `b` | `I` | `mDeviceSecondaryType`，选内置设备图/设备的次级类型 |
+| `c` | `String` | 蓝牙地址 |
+| `d` | `ConnectState` | 连接状态 |
+| `e` | `I` | 单值电量（`setBatteryPower` 写的那个） |
+| `f` | `BluetoothCardBatteryDisplayMode` | `{ MULTI, SINGLE }` |
+| `g` | `ImageView` | **`SINGLE` 模式的英雄图** |
+| `n` | `FrameLayout` | `SINGLE` 模式的电量容器 |
+| `o` | `View` | **`MULTI` 模式的容器，按需从 ViewStub inflate**（`i()` 负责 inflate 并缓存） |
+
+`k()V`（bind / 刷新，384 code units）关键分支：
+
+```
+0029: v1 = this.f                     // 当前显示模式
+002b: v3 = BluetoothCardBatteryDisplayMode.MULTI
+0030: if-ne v1, v3, 0052             // 不是 MULTI → 走单值绘制
+0032: i()                            // inflate 多段容器
+003a: n.setVisibility(GONE)          // 藏单值容器
+0042: o.setVisibility(VISIBLE)       // 显示多段容器
+0045: j()                            // 把单值的 5 个电池图标槽位全部 GONE
+0048: v0 = null
+0049: this.g = null                   // ★ 英雄图字段被清空
+004b: h(); 004e: m(); 0051: return   // ★ 直接 return，不再画图
+```
+
+结论（也就是上一轮翻车的真正原因）：
+
+1. `MULTI` 下 `g` 被置 null 且 `k()` 提前返回，**宿主根本不会给英雄图赋值**；
+   屏幕上那张图是 ViewStub 布局自带的默认图 —— 即"白色带柄 TWS"。
+2. 我们原来只认字段 `g` 贴图，`MULTI` 时 `g == null` 直接放弃，于是留下宿主默认图。
+   现在 `heroImage()` 会退一步：`g` 为空时在多段容器 `o` 里找面积最大的可见 `ImageView`。
+3. `m()`（renderState）在 `MULTI` 分支只读了 `d`（ConnectState）和 `e`（单值电量），
+   **三段数值不是视图自己画的**，来自数据/适配层 —— 所以只调 `setBatteryPower` 填三段没意义。
+4. `setBatteryDisplayMode(mode)` 变值才会写 `f` 并重跑 `k()`；`setBatteryPower(p)` 变值才会写 `e` 并跑 `m()`。
+   两个都是"值没变就啥也不干"，hook 时不能用同值反复覆盖来触发重绘。
+
+因此三段电量的正确顺序是：**先解决多段容器里的图（`heroImage()` 已就绪），
+再确认三段数值的真实来源（`QuickCardDeviceData` 的 4 个 `BatteryInfo` 到底喂给了谁）**，
+两者都落定之前，`MULTI_BATTERY_CARD_ENABLED` 保持 `false`，卡片维持单值电量。
+
 
 ## 3. 方法说明（可复现）
 

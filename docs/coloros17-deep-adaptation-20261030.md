@@ -211,6 +211,13 @@ LSPosedFramework: (com.android.bluetooth)[…,HuaweiPods-HuaweiHfp,…] Rejected
 显示面用 `MULTI_BATTERY_CARD_ENABLED = false` 关掉。下一轮要做的不是"再切一次 MULTI"，
 而是先搞清楚多段布局的取图字段（`mutiBatteryType` 的作用、它读 `icon` 还是另一个槽）。
 
+**已经查清的那一半**（`dexdump -d` 实证，细节见
+[hook 签名矩阵 §2.1](coloros17-hook-signature-matrix-20261030.md)）：`BlueToothCardView.k()` 在 `MULTI` 分支里
+`0049: g = null` + `0051: return`，**根本不画英雄图**，屏幕上那张是 ViewStub 布局自带的默认图；
+`m()` 的 `MULTI` 分支也只读 `ConnectState` 和单值 `e`，三段数值不经过视图。
+对应代码已改进：`heroImage()` 在 `g == null` 时退到多段容器 `o` 里找面积最大的可见 `ImageView`，
+开关仍关着等真机验证。
+
 顺带修了两个真 bug（见 §5.4）。
 
 ### 5.4 电量接收者差点把耳机图刷回默认图

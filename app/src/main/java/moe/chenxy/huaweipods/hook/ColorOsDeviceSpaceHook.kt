@@ -357,10 +357,45 @@ object ColorOsDeviceSpaceHook : HookContext() {
         }
     }
 
+    /**
+     * 卡片里的"英雄图"位图落点。
+     *
+     * `BlueToothCardView.k()` 在 MULTI 模式下会把字段 `g`（`SINGLE` 的 ImageView）**置为 null**，
+     * 然后提前 return（dexdump 实证：`0049: iput-object v0(=null), g`、`0051: return-void`），
+     * 此时可见的耳机图来自按需 inflate 的多段容器（字段 `o`，ViewStub）里的 ImageView。
+     * 只认 `g` 的话，多段布局下永远贴不上我们的图，屏幕上留着宿主内置的通用 TWS 图。
+     */
+    private fun heroImage(card: View): ImageView? {
+        (getObjectField(card, "g") as? ImageView)?.let { return it }
+        val container = getObjectField(card, "o") as? ViewGroup ?: return null
+        return largestImageView(container)
+    }
+
+    private fun largestImageView(root: ViewGroup): ImageView? {
+        var best: ImageView? = null
+        var bestArea = 0
+        val pending = ArrayDeque<View>()
+        pending.add(root)
+        var visited = 0
+        while (pending.isNotEmpty() && visited++ < 128) {
+            val view = pending.removeFirst()
+            if (view is ImageView && view.visibility == View.VISIBLE && view.width * view.height > bestArea) {
+                best = view
+                bestArea = view.width * view.height
+            }
+            if (view is ViewGroup) {
+                repeat(minOf(view.childCount, (128 - visited - pending.size).coerceAtLeast(0))) { index ->
+                    pending.add(view.getChildAt(index))
+                }
+            }
+        }
+        return best
+    }
+
     private fun updateDetailImage(card: View) {
         val address = getObjectField(card, "c") as? String
         val route = address?.let { routeFor(card.context, it) }
-        val image = getObjectField(card, "g") as? ImageView
+        val image = heroImage(card)
         val previous = cards[card]?.get()
         if (previous != null && (previous !== image || route == null)) restore(previous)
         if (address == null || route == null || image == null) {

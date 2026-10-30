@@ -105,10 +105,13 @@ AirPods 三格块的数据由 `plugin.airpods.core.a` 从字节数组生成 `Bat
 
 ## 6. 验证与构建证据
 
-- 单测：**670 通过 / 0 失败**（`app/build/test-results/testDebugUnitTest`）
-- Lint：**0 error**（`app/build/reports/lint-results-debug.xml`）
-- Release：`:app:assembleRelease` 通过，APK SHA-256 `46ab8f5804cf8de7caeff6caf02f1eba39b846b0292e92529147dfdc918746aa`
-- 实机：`adb install -r` 覆盖安装成功；关键路径截图见 `.local/recon/verify-*.png`
+- 单测：**670 通过 / 0 失败**（`app/build/test-results/testDebugUnitTest`，108 个 suite）
+- Lint：**0 error**（235 warning/hint，`app/build/reports/lint-results-debug.xml`）
+- Release：`:app:assembleRelease` 通过，当前 APK SHA-256
+  `bc1c8e2c8488bcc23a9122693d3f8ac8eb3bffd88956d4f3b27c1ac8ca5fb784`
+- 实机（PLK110 / ColorOS 17，2026-10-30 20:30–21:45）：`pm install -r -d` 覆盖安装成功，
+  宿主重启后钩子全部装载；关键路径截图见 `.local/recon/verify2-*.png`
+- 相关提交：`ddd028c`（§8.1–8.4）、`cd4cc51`（§8.5）
 
 ## 7. 复现命令
 

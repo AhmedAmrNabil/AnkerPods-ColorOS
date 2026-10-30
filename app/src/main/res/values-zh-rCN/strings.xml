@@ -10,6 +10,10 @@
     <string name="coloros_live_alert_low_latency_state_on">低时延已开启</string>
     <string name="coloros_live_alert_low_latency_state_off">低时延已关闭</string>
     <string name="coloros_live_alert_settings">ColorOS 流体云</string>
+    <string name="coloros_live_alert_noise_action">切换到%1$s</string>
+    <string name="coloros_live_alert_noise_off">关闭</string>
+    <string name="coloros_live_alert_noise_cancellation">降噪</string>
+    <string name="coloros_live_alert_noise_transparency">通透</string>
     <string name="coloros_live_alert_settings_summary">打开系统通知设置并开启“实时提醒”</string>
     <string name="coloros_background_settings">ColorOS 自启动管理</string>
     <string name="coloros_background_settings_summary">允许自启动和后台活动，让弹窗与流体云能稳定唤醒</string>

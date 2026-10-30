@@ -317,12 +317,12 @@ private fun PopupContent(
             addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_CHANGED)
         }, Context.RECEIVER_EXPORTED)
 
-        context.sendBroadcast(Intent(HuaweiPodsAction.ACTION_PODS_UI_INIT).apply {
+        context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_PODS_UI_INIT).apply {
             putPopupTarget(target)
             setPackage("com.android.bluetooth")
             addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
         })
-        context.sendBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
+        context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
             putPopupTarget(target)
             setPackage("com.android.bluetooth")
             addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
@@ -343,7 +343,7 @@ private fun PopupContent(
             delay(2_500)
             if (terminalClosed.value) break
             if (target.route.supportsAncStateReadback) {
-                context.sendBroadcast(Intent(HuaweiPodsAction.ACTION_HUAWEI_ANC_REFRESH).apply {
+                context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_HUAWEI_ANC_REFRESH).apply {
                     putPopupTarget(target)
                     setPackage("com.android.bluetooth")
                     addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
@@ -351,7 +351,7 @@ private fun PopupContent(
             }
             ancRefreshCount += 1
             if (ancRefreshCount % 6 == 0) {
-                context.sendBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
+                context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
                     putPopupTarget(target)
                     setPackage("com.android.bluetooth")
                     addFlags(Intent.FLAG_RECEIVER_FOREGROUND)

@@ -76,7 +76,12 @@ object HuaweiPodsAction {
     const val ACTION_HUAWEI_SPATIAL_CHANGED = PREFIX + ".huawei_spatial_changed"
     const val EXTRA_HUAWEI_SPATIAL_MODE = "huawei_spatial_mode"
     const val ACTION_GET_PODS_MAC = PREFIX + ".get_pods_mac"
-    const val ACTION_PODS_MAC_RECEIVED = PREFIX + ".get_pods_mac"
+
+    /**
+     * 蓝牙进程回传当前会话 MAC。必须与请求动作区分：两者若同名字符串，`when` 分支会落到
+     * 请求侧的控制域，任何被信任的控制发送方都能伪造一次 MAC 回包。
+     */
+    const val ACTION_PODS_MAC_RECEIVED = PREFIX + ".pods_mac_received"
     const val ACTION_REFRESH_STATUS = PREFIX + ".refresh_status"
     const val ACTION_CYCLE_ANC = PREFIX + ".cycle_anc"
     const val ACTION_RFCOMM_LOG = PREFIX + ".rfcomm_log"

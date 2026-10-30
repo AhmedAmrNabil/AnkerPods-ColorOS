@@ -9,6 +9,10 @@
     <string name="coloros_live_alert_low_latency_state_on">Low latency on</string>
     <string name="coloros_live_alert_low_latency_state_off">Low latency off</string>
     <string name="coloros_live_alert_settings">ColorOS Fluid Cloud</string>
+    <string name="coloros_live_alert_noise_action">Switch to %1$s</string>
+    <string name="coloros_live_alert_noise_off">Off</string>
+    <string name="coloros_live_alert_noise_cancellation">NC</string>
+    <string name="coloros_live_alert_noise_transparency">Awareness</string>
     <string name="coloros_live_alert_settings_summary">Open system notification settings and enable Live alerts</string>
     <string name="coloros_background_settings">ColorOS auto-launch</string>
     <string name="coloros_background_settings_summary">Allow auto-launch and background activity so popups and Fluid Cloud can wake reliably</string>

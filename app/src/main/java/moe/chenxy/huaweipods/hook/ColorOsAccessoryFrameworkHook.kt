@@ -70,6 +70,10 @@ object ColorOsAccessoryFrameworkHook : HookContext() {
                 }
                 hookBefore(onCreate) {
                     val activity = instance ?: return@hookBefore
+                    // 每次弹窗都重新判定标记：上一次华为卡片留下的文件名/内置图不能串到
+                    // 本次其它厂商的卡片上（图片替换按资源 id 命中，不看卡片身份）。
+                    popupImageFileName = null
+                    popupFallbackDrawableName = null
                     val card = readPopupCard(activity) ?: return@hookBefore
                     if (isHuaweiPodsCard(card)) {
                         popupImageFileName =

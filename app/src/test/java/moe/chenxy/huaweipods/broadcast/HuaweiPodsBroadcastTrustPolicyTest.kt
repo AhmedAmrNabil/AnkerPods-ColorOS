@@ -231,7 +231,6 @@ class HuaweiPodsBroadcastTrustPolicyTest {
             HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_SET,
             HuaweiPodsAction.ACTION_CONFIG_CHANGED,
             HuaweiPodsAction.ACTION_PODS_CONNECTED,
-            HuaweiPodsAction.ACTION_PODS_DISCONNECTED,
             HuaweiPodsAction.ACTION_PODS_CONNECTION_STATE_CHANGED,
             HuaweiPodsAction.ACTION_MODULE_BLUETOOTH_SERVICE_ALIVE,
         )
@@ -244,6 +243,50 @@ class HuaweiPodsBroadcastTrustPolicyTest {
                 ),
             )
         }
+    }
+
+    @Test
+    fun `mac request and mac reply never share one wire action`() {
+        // 两个常量同名时 `when` 会落到请求侧的控制域，被信任的控制发送方就能伪造一次 MAC 回包。
+        assertFalse(
+            HuaweiPodsAction.ACTION_GET_PODS_MAC == HuaweiPodsAction.ACTION_PODS_MAC_RECEIVED,
+        )
+        assertEquals(
+            BroadcastActionDomain.APP_CONTROL,
+            HuaweiPodsBroadcastTrustPolicy.resolveDomain(HuaweiPodsAction.ACTION_GET_PODS_MAC),
+        )
+        assertEquals(
+            BroadcastActionDomain.BLUETOOTH_STATE,
+            HuaweiPodsBroadcastTrustPolicy.resolveDomain(HuaweiPodsAction.ACTION_PODS_MAC_RECEIVED),
+        )
+        assertFalse(
+            HuaweiPodsBroadcastTrustPolicy.shouldAcceptBroadcast(
+                HuaweiPodsAction.ACTION_PODS_MAC_RECEIVED,
+                HuaweiPodsBroadcastTrustPolicy.PACKAGE_HEYTAP_MYDEVICES,
+            ),
+        )
+        assertTrue(
+            HuaweiPodsBroadcastTrustPolicy.shouldAcceptBroadcast(
+                HuaweiPodsAction.ACTION_PODS_MAC_RECEIVED,
+                HuaweiPodsBroadcastTrustPolicy.PACKAGE_BLUETOOTH,
+            ),
+        )
+    }
+
+    @Test
+    fun `my devices accepts the disconnect event so stale battery can be cleared`() {
+        assertTrue(
+            HuaweiPodsBroadcastTrustPolicy.shouldAcceptMyDevicesStateBroadcast(
+                HuaweiPodsAction.ACTION_PODS_DISCONNECTED,
+                HuaweiPodsBroadcastTrustPolicy.PACKAGE_BLUETOOTH,
+            ),
+        )
+        assertFalse(
+            HuaweiPodsBroadcastTrustPolicy.shouldAcceptMyDevicesStateBroadcast(
+                HuaweiPodsAction.ACTION_PODS_DISCONNECTED,
+                "com.random.sender",
+            ),
+        )
     }
 
     @Test

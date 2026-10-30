@@ -35,3 +35,6 @@ opencode.json
 /docs/.vitepress/dist/
 /.wrangler/
 /.dev.vars
+
+# Local recon artifacts (firmware dumps, APK pulls, reports)
+/.local/

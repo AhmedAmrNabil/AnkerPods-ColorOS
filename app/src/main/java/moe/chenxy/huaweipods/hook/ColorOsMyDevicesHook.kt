@@ -13,6 +13,9 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -63,12 +66,15 @@ object ColorOsMyDevicesHook : HookContext() {
 
     private var statusReceiverContext: Context? = null
     private var statusReceiver: BroadcastReceiver? = null
+    private val main = Handler(Looper.getMainLooper())
     private val activeRows = WeakHashMap<View, ColorOsHeadsetRow>()
     private val preferenceRows = WeakHashMap<Any, ColorOsHeadsetRow>()
+    private val hostRows = WeakHashMap<View, HostRowSnapshot>()
     private val latestSummaries = ConcurrentHashMap<String, String>()
     private val latestAncModes = ConcurrentHashMap<String, NoiseControlMode>()
     private val latestLowLatency = ConcurrentHashMap<String, Boolean>()
     private val latestWearDetection = ConcurrentHashMap<String, Boolean>()
+    private val toggleWrites = ColorOsToggleWriteLedger()
     private val hookedBindMethods = ConcurrentHashMap.newKeySet<Method>()
 
     override fun onHook() {
@@ -94,13 +100,69 @@ object ColorOsMyDevicesHook : HookContext() {
         }
         statusReceiver = null
         statusReceiverContext = null
+        main.removeCallbacksAndMessages(null)
+        // 关闭/热重载必须把宿主行还原：文字、点击和 chip 只属于当前世代。先还原再清状态，
+        // 否则旧世代改过的文字会永久留在系统页面上。
+        val rows = synchronized(activeRows) { activeRows.keys.toList() }
+        val restored = rows.isEmpty() || runOnMainThreadBlocking {
+            rows.forEach { row -> runCatching { restoreHostRow(row) } }
+        }
+        if (!restored) Log.w(TAG, "Unable to restore My Devices rows on close (rows=${rows.size})")
         synchronized(activeRows) { activeRows.clear() }
         synchronized(preferenceRows) { preferenceRows.clear() }
+        synchronized(hostRows) { hostRows.clear() }
+        toggleWrites.clear()
         latestSummaries.clear()
         latestAncModes.clear()
         latestLowLatency.clear()
         latestWearDetection.clear()
     }
+
+    /**
+     * 把宿主行恢复成注入前的样子：标题/摘要文字、摘要可见性、无障碍描述与点击监听。
+     *
+     * androidx `Preference` 会在下一次绑定里重新安装自己的点击监听，因此取不到原始监听时清空
+     * 监听是安全的；取得到（隐藏 API 未被拦截）就精确还原。
+     */
+    private fun restoreHostRow(row: View) {
+        removeQuickControls(row)
+        val snapshot = synchronized(hostRows) { hostRows.remove(row) } ?: return
+        row.contentDescription = snapshot.contentDescription
+        snapshot.title?.let { (view, text) -> view.text = text }
+        snapshot.summary?.let { (view, text) ->
+            view.text = text
+            view.visibility = snapshot.summaryVisibility
+        }
+        snapshot.labels.forEach { (view, text) -> view.text = text }
+        row.setOnClickListener(snapshot.clickListener)
+        row.isClickable = snapshot.clickable
+    }
+
+    private fun snapshotHostRow(row: View) {
+        if (synchronized(hostRows) { hostRows.containsKey(row) }) return
+        val title = row.findViewById<TextView>(android.R.id.title)
+        val summary = row.findViewById<TextView>(android.R.id.summary)
+        val snapshot = HostRowSnapshot(
+            contentDescription = row.contentDescription,
+            title = title?.let { it to it.text },
+            summary = summary?.let { it to it.text },
+            summaryVisibility = summary?.visibility ?: View.GONE,
+            labels = if (title == null) collectTextViews(row).map { it to it.text } else emptyList(),
+            clickListener = readHostClickListener(row),
+            clickable = row.isClickable,
+        )
+        synchronized(hostRows) { hostRows[row] = snapshot }
+    }
+
+    /** `View.getListenerInfo()` 属于隐藏 API；被拦截时返回 null，由宿主下次绑定恢复点击。 */
+    private fun readHostClickListener(row: View): View.OnClickListener? = runCatching {
+        val info = View::class.java.getDeclaredMethod("getListenerInfo")
+            .apply { isAccessible = true }
+            .invoke(row) ?: return@runCatching null
+        info.javaClass.getDeclaredField("mOnClickListener")
+            .apply { isAccessible = true }
+            .get(info) as? View.OnClickListener
+    }.getOrNull()
 
     private fun hookLegacyDetailPage() {
         val method = findMethod(
@@ -177,6 +239,7 @@ object ColorOsMyDevicesHook : HookContext() {
             address = device.address.uppercase(),
             deviceName = route.displayName,
             route = route,
+            allowLabelFallback = true,
         )
         synchronized(activeRows) { activeRows[row] = entry }
         customizeRow(row, entry, latestSummaries[entry.address])
@@ -263,13 +326,28 @@ object ColorOsMyDevicesHook : HookContext() {
         return null
     }
 
-    private fun customizeRow(row: View, entry: ColorOsHeadsetRow, summary: String? = null) {
-        customizeRowText(row, entry.deviceName, summary)
+    private fun customizeRow(
+        row: View,
+        entry: ColorOsHeadsetRow,
+        summary: String? = null,
+    ) {
+        snapshotHostRow(row)
+        customizeRowText(row, entry.deviceName, summary, entry.allowLabelFallback)
         runCatching { attachQuickControls(row, entry) }
             .onFailure { Log.w(TAG, "Unable to attach quick controls", it) }
     }
 
-    private fun customizeRowText(row: View, deviceName: String, summary: String? = null) {
+    /**
+     * @param allowLabelFallback 只有 16.x 的 `row_bt_setting` 缺少 `android.R.id.title/summary`，
+     * 允许按文本顺序兜底。17.x 的 Preference 行必须命中系统 id：猜错 TextView 会改坏宿主其它
+     * 文字，事后也无法判断归属。
+     */
+    private fun customizeRowText(
+        row: View,
+        deviceName: String,
+        summary: String? = null,
+        allowLabelFallback: Boolean = false,
+    ) {
         row.isEnabled = true
         row.alpha = 1f
         row.contentDescription = "HuaweiPods, $deviceName"
@@ -288,6 +366,10 @@ object ColorOsMyDevicesHook : HookContext() {
                 text = summaryText
                 visibility = View.VISIBLE
             }
+            return
+        }
+        if (!allowLabelFallback) {
+            Log.w(TAG, "Row has no android.R.id.title; keeping the host text untouched")
             return
         }
         val labels = collectTextViews(row)
@@ -326,16 +408,26 @@ object ColorOsMyDevicesHook : HookContext() {
                 if (action == HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_CHANGED) {
                     val address = received.getStringExtra("address")?.uppercase() ?: return
                     if (!received.hasExtra(HuaweiPodsAction.EXTRA_HUAWEI_LOW_LATENCY_ENABLED)) return
+                    // 蓝牙进程的回报（写入结果或回读）才算确认；没有回报的乐观写入交给超时回滚。
+                    toggleWrites.complete(address, ColorOsToggleKey.LOW_LATENCY)
                     latestLowLatency[address] = received.getBooleanExtra(
                         HuaweiPodsAction.EXTRA_HUAWEI_LOW_LATENCY_ENABLED,
                         false,
                     )
+                    if (!received.getBooleanExtra(
+                            HuaweiPodsAction.EXTRA_HUAWEI_LOW_LATENCY_WRITE_SUCCESS,
+                            true,
+                        )
+                    ) {
+                        Log.i(TAG, "Low latency write rejected by the headset; showing the reported state")
+                    }
                     refreshQuickControls(address)
                     return
                 }
                 if (action == HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_CHANGED) {
                     val address = received.getStringExtra("address")?.uppercase() ?: return
                     if (!received.hasExtra(HuaweiPodsAction.EXTRA_HUAWEI_WEAR_DETECTION_ENABLED)) return
+                    toggleWrites.complete(address, ColorOsToggleKey.WEAR_DETECTION)
                     latestWearDetection[address] = received.getBooleanExtra(
                         HuaweiPodsAction.EXTRA_HUAWEI_WEAR_DETECTION_ENABLED,
                         false,
@@ -343,8 +435,34 @@ object ColorOsMyDevicesHook : HookContext() {
                     refreshQuickControls(address)
                     return
                 }
+                if (action == HuaweiPodsAction.ACTION_PODS_DISCONNECTED) {
+                    // 断连后不留旧状态：否则重新连上（甚至换成另一副耳机）前页面会一直显示上次的电量。
+                    val address = received.getStringExtra("address")?.uppercase()
+                    if (address != null) {
+                        latestSummaries.remove(address)
+                        latestAncModes.remove(address)
+                        latestLowLatency.remove(address)
+                        latestWearDetection.remove(address)
+                    }
+                    // 设备空间卡片的三段电量同源，断连时必须一起丢，否则卡上会留着上一副耳机的电量。
+                    ColorOsPodBatteryStore.clear(address)
+                    toggleWrites.clear()
+                    if (address != null) refreshQuickControls(address)
+                    return
+                }
                 if (action != HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED) return
                 val address = received.getStringExtra("address")?.uppercase() ?: return
+                ColorOsPodBatteryStore.put(
+                    ColorOsPodBattery(
+                        address = address,
+                        left = received.getIntExtra("left_battery", 0),
+                        leftConnected = received.getBooleanExtra("left_connected", false),
+                        right = received.getIntExtra("right_battery", 0),
+                        rightConnected = received.getBooleanExtra("right_connected", false),
+                        case = received.getIntExtra("case_battery", 0),
+                        caseConnected = received.getBooleanExtra("case_connected", false),
+                    ),
+                )
                 val summary = colorOsBatterySummary(
                     leftBattery = received.getIntExtra("left_battery", 0),
                     leftConnected = received.getBooleanExtra("left_connected", false),
@@ -366,6 +484,7 @@ object ColorOsMyDevicesHook : HookContext() {
                 IntentFilter().apply {
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_ANC_CHANGED)
+                    addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_DISCONNECTED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_CHANGED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_CHANGED)
                 },
@@ -483,6 +602,24 @@ object ColorOsMyDevicesHook : HookContext() {
             .forEach { (row, entry) -> updateQuickControls(row, entry) }
     }
 
+    /** 超时后把没拿到回报的开关回滚，避免页面长期显示与耳机相反的状态。 */
+    private fun scheduleToggleExpiry() {
+        main.removeCallbacks(toggleExpiry)
+        main.postDelayed(toggleExpiry, ColorOsToggleWriteLedger.DEFAULT_TIMEOUT_MILLIS + 250L)
+    }
+
+    private val toggleExpiry = Runnable {
+        val expired = toggleWrites.expired(SystemClock.elapsedRealtime())
+        expired.forEach { write ->
+            when (write.key) {
+                ColorOsToggleKey.LOW_LATENCY -> latestLowLatency[write.address] = !write.requested
+                ColorOsToggleKey.WEAR_DETECTION -> latestWearDetection[write.address] = !write.requested
+            }
+            Log.i(TAG, "Toggle ${write.key} unconfirmed; rolled back to ${!write.requested}")
+            refreshQuickControls(write.address)
+        }
+    }
+
     private fun updateQuickControls(row: View, entry: ColorOsHeadsetRow) {
         val controls = row.findViewWithTag<LinearLayout>(QUICK_CONTROLS_TAG) ?: return
         val selectedAnc = latestAncModes[entry.address]
@@ -562,7 +699,14 @@ object ColorOsMyDevicesHook : HookContext() {
             ColorOsQuickToggle.LOW_LATENCY -> {
                 val enabled = latestLowLatency[entry.address] != true
                 latestLowLatency[entry.address] = enabled
+                toggleWrites.begin(
+                    entry.address,
+                    ColorOsToggleKey.LOW_LATENCY,
+                    enabled,
+                    SystemClock.elapsedRealtime(),
+                )
                 refreshQuickControls(entry.address)
+                scheduleToggleExpiry()
                 requestLowLatency(context, device, entry.route, enabled)
             }
             ColorOsQuickToggle.WEAR_DETECTION -> {
@@ -572,7 +716,14 @@ object ColorOsMyDevicesHook : HookContext() {
                     return
                 }
                 latestWearDetection[entry.address] = !current
+                toggleWrites.begin(
+                    entry.address,
+                    ColorOsToggleKey.WEAR_DETECTION,
+                    !current,
+                    SystemClock.elapsedRealtime(),
+                )
                 refreshQuickControls(entry.address)
+                scheduleToggleExpiry()
                 runCatching {
                     sendControl(context, HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_SET, device, entry.route) {
                         putExtra(HuaweiPodsAction.EXTRA_HUAWEI_WEAR_DETECTION_ENABLED, !current)
@@ -706,6 +857,19 @@ private data class ColorOsHeadsetRow(
     val address: String,
     val deviceName: String,
     val route: HuaweiDeviceRoute,
+    /** 16.x 的 `row_bt_setting` 没有系统文本 id，允许按文本顺序兜底。 */
+    val allowLabelFallback: Boolean = false,
+)
+
+/** 宿主行注入前的快照，用于关闭/热重载时精确还原。 */
+private class HostRowSnapshot(
+    val contentDescription: CharSequence?,
+    val title: Pair<TextView, CharSequence>?,
+    val summary: Pair<TextView, CharSequence>?,
+    val summaryVisibility: Int,
+    val labels: List<Pair<TextView, CharSequence>>,
+    val clickListener: View.OnClickListener?,
+    val clickable: Boolean,
 )
 
 private const val QUICK_CONTROLS_TAG = "huaweipods_quick_controls"

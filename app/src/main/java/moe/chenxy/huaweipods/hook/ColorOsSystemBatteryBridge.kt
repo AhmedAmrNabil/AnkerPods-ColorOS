@@ -118,6 +118,20 @@ internal object ColorOsSystemBatteryBridge {
 
     fun clear(context: Context, device: BluetoothDevice) {
         if (!enabled) return
+        // OPLUS 电量数组是独立通道：只清标准电量时，「我的设备」/蓝牙设置仍会显示断开前的
+        // 左右耳和盒电量。断开时两处一起清。
+        oplusRemoteDevice(context)?.let { remote ->
+            runCatching {
+                remote.call(
+                    "notifyBatteryLevelChanged",
+                    arrayOf(BluetoothDevice::class.java, IntArray::class.java),
+                    device,
+                    IntArray(6) { COLOR_OS_BATTERY_UNKNOWN },
+                )
+            }.onFailure {
+                Log.w(TAG, "ColorOS earphone battery channel clear failed", it)
+            }
+        }
         setAndroidBatteryLevel(context, device, COLOR_OS_BATTERY_UNKNOWN)
     }
 

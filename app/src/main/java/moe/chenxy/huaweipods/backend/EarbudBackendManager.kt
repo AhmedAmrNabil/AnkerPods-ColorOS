@@ -1,16 +1,23 @@
 package moe.chenxy.huaweipods.backend
 
 import android.bluetooth.BluetoothDevice
+import moe.chenxy.huaweipods.backend.soundcore.SoundcoreBackend
 
 object EarbudBackendManager {
-    var activeBackend: EarbudBackend = HuaweiEarbudBackend
+    var activeBackend: EarbudBackend = SoundcoreBackend
         private set
 
     fun getBackend(device: BluetoothDevice): EarbudBackend {
-        return HuaweiEarbudBackend
+        val backend = if (SoundcoreBackend.isSupported(device)) {
+            SoundcoreBackend
+        } else {
+            HuaweiEarbudBackend
+        }
+        activeBackend = backend
+        return backend
     }
 
     fun isSupported(device: BluetoothDevice): Boolean {
-        return getBackend(device).isSupported(device)
+        return SoundcoreBackend.isSupported(device) || HuaweiEarbudBackend.isSupported(device)
     }
 }

@@ -3,6 +3,7 @@ package moe.chenxy.huaweipods.hook
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import java.lang.reflect.Method
 import moe.chenxy.huaweipods.platform.RomFamily
@@ -61,6 +62,9 @@ internal object ColorOsSystemBatteryBridge {
     private const val FEATURE_INTERFACE = "com.oplus.bluetooth.common.IOplusCommonFeature"
     private const val REMOTE_DEVICE_INTERFACE =
         "com.oplus.bluetooth.common.interfaces.IOplusRemoteDevice"
+    private const val AIRPODS_MANAGER = "com.oplus.bluetooth.feature.airpods.AirPodsManager"
+    private const val EXTEND_FEATURE_INTERFACE =
+        "com.oplus.bluetooth.common.interfaces.IOplusExtendFeature"
     private const val DEFAULT_TRANSPORT_HFP_AT = 1
     private const val ADAPTER_SERVICE = "com.android.bluetooth.btservice.AdapterService"
 
@@ -70,6 +74,8 @@ internal object ColorOsSystemBatteryBridge {
     private var lastPublishSignature: String? = null
     @Volatile
     private var cachedRemoteDevice: Pair<ClassLoader, RemoteDevice>? = null
+    @Volatile
+    private var cachedAirPodsManager: Pair<ClassLoader, Any?>? = null
 
     private val enabled: Boolean by lazy {
         RomIntegrationPolicy.detect(Build.MANUFACTURER, Build.BRAND) == RomFamily.COLOR_OS
@@ -131,6 +137,7 @@ internal object ColorOsSystemBatteryBridge {
                 Log.w(TAG, "ColorOS earphone battery channel update failed", it)
             }
         }
+        notifyAirPodsManager(context, device, info)
         // OPLUS 在右耳缺席时会把 -1 当作最低值写入标准电量；这里再用在线耳机较低值校正。
         val systemLevel = colorOsSystemBatteryLevel(battery)
         if (systemLevel >= 0) setAndroidBatteryLevel(context, device, systemLevel)
@@ -170,9 +177,87 @@ internal object ColorOsSystemBatteryBridge {
                 BluetoothDevice::class.java,
                 Int::class.javaPrimitiveType!!,
                 Boolean::class.javaPrimitiveType!!,
-            ).invoke(adapterService, device, level, false)
+            ).invoke(adapterService, device, level, true)
         }.onFailure {
             Log.w(TAG, "Android battery level update failed level=$level", it)
+        }
+
+        // Direct standard broadcast to ensure SystemUI & Statusbar pick it up immediately
+        runCatching {
+            val intent = Intent("android.bluetooth.device.action.BATTERY_LEVEL_CHANGED").apply {
+                putExtra("android.bluetooth.device.extra.DEVICE", device)
+                putExtra("android.bluetooth.device.extra.BATTERY_LEVEL", level)
+                addFlags(0x04000000 or 0x01000000)
+            }
+            runCatching {
+                adapterService.javaClass.findMethod(
+                    "sendBroadcast",
+                    Intent::class.java,
+                    String::class.java,
+                ).invoke(adapterService, intent, "android.permission.BLUETOOTH_CONNECT")
+            }.getOrElse {
+                context.sendBroadcast(intent, "android.permission.BLUETOOTH_CONNECT")
+            }
+        }.onFailure {
+            Log.w(TAG, "Direct battery level broadcast failed level=$level", it)
+        }
+    }
+
+    private fun airPodsManager(context: Context): Any? {
+        val classLoader = context.classLoader ?: return null
+        cachedAirPodsManager?.takeIf { it.first === classLoader }?.let { return it.second }
+        val instance = resolveAirPodsManager(classLoader)
+        cachedAirPodsManager = classLoader to instance
+        return instance
+    }
+
+    private fun resolveAirPodsManager(classLoader: ClassLoader): Any? = runCatching {
+        val clazz = Class.forName(AIRPODS_MANAGER, false, classLoader)
+        val sInstance = clazz.getDeclaredField("sInstance").apply { isAccessible = true }.get(null)
+        if (sInstance != null) return@runCatching sInstance
+
+        val extendType = Class.forName(EXTEND_FEATURE_INTERFACE, false, classLoader)
+        val featureType = Class.forName(FEATURE_INTERFACE, false, classLoader)
+        val default = extendType.getField("DEFAULT").get(null)
+        Class.forName(FEATURE_CACHE, false, classLoader)
+            .getMethod("get", featureType)
+            .invoke(null, default)
+    }.getOrNull()
+
+    private fun notifyAirPodsManager(context: Context, device: BluetoothDevice, info: IntArray) {
+        val manager = airPodsManager(context) ?: return
+        runCatching {
+            val method = manager.javaClass.findMethod(
+                "notifyBatteryLevelChanged",
+                BluetoothDevice::class.java,
+                IntArray::class.java,
+            )
+            method.invoke(manager, device, info)
+        }.recoverCatching {
+            val method = manager.javaClass.findMethod(
+                "updateBatteryInfo",
+                BluetoothDevice::class.java,
+                Boolean::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+            )
+            method.invoke(
+                manager,
+                device,
+                false,
+                info[0],
+                info[1],
+                info[2],
+                info[3],
+                info[4],
+                info[5],
+            )
+        }.onFailure {
+            Log.d(TAG, "AirPodsManager notification failed: ${it.message}")
         }
     }
 
@@ -191,6 +276,11 @@ internal object ColorOsSystemBatteryBridge {
                 .apply { isAccessible = true }
                 .get(null)
         }.getOrNull()?.let { return it }
+        airPodsManager(context)?.let { manager ->
+            runCatching {
+                manager.javaClass.getDeclaredField("mAdapterService").apply { isAccessible = true }.get(manager)
+            }.getOrNull()?.let { return it }
+        }
         return oplusRemoteDevice(context)?.instance?.let { remote ->
             runCatching {
                 remote.javaClass.getDeclaredField("mAdapterService").apply { isAccessible = true }.get(remote)

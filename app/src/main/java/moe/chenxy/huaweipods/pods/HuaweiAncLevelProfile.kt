@@ -49,6 +49,14 @@ private val freeBudsSe4AncOptions = listOf(
     HuaweiAncLevelOption(HuaweiAncLevel.DEEP, protocolValue = 0x02, miuiValue = 0x02),
 )
 
+/** Soundcore Liberty 4 NC (A3947)：自适应=0、轻度=1 (manual 1)、均衡=2 (manual 3)、深度=3 (manual 5)。 */
+private val soundcoreLiberty4NcAncOptions = listOf(
+    HuaweiAncLevelOption(HuaweiAncLevel.ADAPTIVE, protocolValue = 0, miuiValue = 3),
+    HuaweiAncLevelOption(HuaweiAncLevel.LIGHT, protocolValue = 1, miuiValue = 1),
+    HuaweiAncLevelOption(HuaweiAncLevel.BALANCED, protocolValue = 2, miuiValue = 0),
+    HuaweiAncLevelOption(HuaweiAncLevel.DEEP, protocolValue = 3, miuiValue = 2),
+)
+
 internal val HuaweiDeviceRoute.ancLevelOptions: List<HuaweiAncLevelOption>
     get() = when (this) {
         HuaweiDeviceRoute.HUAWEI_FREEBUDS5,
@@ -65,6 +73,7 @@ internal val HuaweiDeviceRoute.ancLevelOptions: List<HuaweiAncLevelOption>
         HuaweiDeviceRoute.HUAWEI_FREEBUDS7I,
         -> pro3AndFreeBuds7iAncOptions
         HuaweiDeviceRoute.HUAWEI_FREEBUDS_PRO5 -> freeBudsPro5AncOptions
+        HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC -> soundcoreLiberty4NcAncOptions
         else -> emptyList()
     }
 

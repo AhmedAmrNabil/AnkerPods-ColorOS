@@ -172,4 +172,27 @@ class HuaweiAncLevelProfileTest {
         assertTrue(0x04 in route.transparencySubModes)
         assertFalse(0xFF in route.transparencySubModes)
     }
+
+    @Test
+    fun `Soundcore Liberty 4 NC exposes its four discrete ANC levels`() {
+        val route = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        val expected = listOf(
+            HuaweiAncLevelOption(HuaweiAncLevel.ADAPTIVE, protocolValue = 0, miuiValue = 3),
+            HuaweiAncLevelOption(HuaweiAncLevel.LIGHT, protocolValue = 1, miuiValue = 1),
+            HuaweiAncLevelOption(HuaweiAncLevel.BALANCED, protocolValue = 2, miuiValue = 0),
+            HuaweiAncLevelOption(HuaweiAncLevel.DEEP, protocolValue = 3, miuiValue = 2),
+        )
+
+        assertEquals(expected, route.ancLevelOptions)
+        assertEquals(0, route.defaultAncSubMode)
+        expected.forEach { option ->
+            assertEquals(option.protocolValue, route.ancSubModeForMiuiLevel(option.miuiValue))
+            assertEquals(option.miuiValue, route.miuiLevelForAncSubMode(option.protocolValue))
+        }
+        assertTrue(route.supportsAncSubMode(0))
+        assertTrue(route.supportsAncSubMode(1))
+        assertTrue(route.supportsAncSubMode(2))
+        assertTrue(route.supportsAncSubMode(3))
+        assertFalse(route.supportsAncSubMode(4))
+    }
 }

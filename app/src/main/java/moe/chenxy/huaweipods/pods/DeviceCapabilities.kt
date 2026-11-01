@@ -225,6 +225,7 @@ private val routeCapabilities = linkedMapOf(
         supportsAnc = true,
         supportsTransparency = true,
         supportsAncStateReadback = true,
+        supportsDiscreteAncLevels = true,
         hasChargingCase = true,
     ),
 )

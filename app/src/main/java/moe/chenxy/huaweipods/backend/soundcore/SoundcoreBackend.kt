@@ -26,7 +26,9 @@ import moe.chenxy.huaweipods.backend.EarbudBackend
 import moe.chenxy.huaweipods.backend.EarbudState
 import moe.chenxy.huaweipods.broadcast.sendHeadsetAppBroadcast
 import moe.chenxy.huaweipods.hook.ColorOsSystemBatteryBridge
+import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.NoiseControlMode
+import moe.chenxy.huaweipods.pods.encodeHuaweiDeviceRouteForBroadcast
 import moe.chenxy.huaweipods.utils.miuiStrongToast.MiuiStrongToastUtil
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
@@ -78,6 +80,11 @@ object SoundcoreBackend : EarbudBackend {
                 }
                 HuaweiPodsAction.ACTION_REFRESH_STATUS,
                 HuaweiPodsAction.ACTION_PODS_UI_INIT -> {
+                    activeDevice?.takeIf { _state.value.isConnected }?.let { dev ->
+                        val name = dev.name ?: dev.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947
+                        sendConnectionState("connected")
+                        sendConnectedBroadcast(dev, name)
+                    }
                     _state.value.battery?.let { sendBattery(it) }
                     sendAnc(_state.value.ancMode)
                     sendRequestState()
@@ -170,6 +177,7 @@ object SoundcoreBackend : EarbudBackend {
             )
         }
 
+        sendConnectionState("connected")
         sendConnectedBroadcast(device, deviceName)
         sendRequestState()
 
@@ -279,6 +287,7 @@ object SoundcoreBackend : EarbudBackend {
 
         ColorOsSystemBatteryBridge.clear(context, device)
         MiuiStrongToastUtil.cancelPodsNotificationByMiuiBt(context, device)
+        sendConnectionState("disconnected")
         sendDisconnectedBroadcast(device)
 
         _state.update { EarbudState() }
@@ -346,14 +355,28 @@ object SoundcoreBackend : EarbudBackend {
         }
     }
 
+    private fun sendConnectionState(state: String) {
+        val currentDevice = activeDevice ?: return
+        val deviceName = currentDevice.name ?: currentDevice.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947
+        val ctx = appContext ?: return
+        sendAppBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_CONNECTION_STATE_CHANGED) {
+            putExtra("address", currentDevice.address)
+            putExtra("device_name", deviceName)
+            putExtra("state", state)
+        }
+    }
+
     private fun sendConnectedBroadcast(device: BluetoothDevice, deviceName: String) {
         val ctx = appContext ?: return
+        val routeStr = encodeHuaweiDeviceRouteForBroadcast(HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC)
         sendAppBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_CONNECTED) {
             putExtra("address", device.address)
             putExtra("device_name", deviceName)
+            routeStr?.let { putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it) }
         }
         sendExternalBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_CONNECTED) {
             putExtra("device_name", deviceName)
+            routeStr?.let { putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it) }
         }
     }
 
@@ -403,9 +426,11 @@ object SoundcoreBackend : EarbudBackend {
 
     private fun sendAppBroadcast(ctx: Context, action: String, fill: Intent.() -> Unit = {}) {
         val currentDevice = activeDevice
+        val routeStr = encodeHuaweiDeviceRouteForBroadcast(HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC)
         Intent(action).apply {
             putExtra("vendor", "soundcore")
             putExtra(HuaweiPodsAction.EXTRA_EVENT_ELAPSED_REALTIME, SystemClock.elapsedRealtime())
+            routeStr?.let { putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it) }
             currentDevice?.let {
                 putExtra("address", it.address)
                 putExtra("device_name", it.name ?: it.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947)
@@ -419,10 +444,12 @@ object SoundcoreBackend : EarbudBackend {
 
     private fun sendExternalBroadcast(ctx: Context, action: String, fill: Intent.() -> Unit = {}) {
         val currentDevice = activeDevice
+        val routeStr = encodeHuaweiDeviceRouteForBroadcast(HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC)
         listOf("com.heytap.mydevices").forEach { targetPackage ->
             Intent(action).apply {
                 putExtra("vendor", "soundcore")
                 putExtra(HuaweiPodsAction.EXTRA_EVENT_ELAPSED_REALTIME, SystemClock.elapsedRealtime())
+                routeStr?.let { putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it) }
                 currentDevice?.let {
                     putExtra("address", it.address)
                     putExtra("device_name", it.name ?: it.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947)

@@ -240,6 +240,7 @@ internal fun MainTabsScaffold(
                         onBackToDevicePicker = onBackToDevicePicker,
                         onOpenPodImageConfig = ::openPodImageDialogManually,
                         onOpenSystemHeadsetSettings = onOpenSystemHeadsetSettings,
+                        deviceRoute = deviceRoute,
                     )
 
                     MainTab.About -> AboutTabPage(
@@ -373,6 +374,7 @@ private fun EarphonesTabShell(
     onBackToDevicePicker: () -> Unit,
     onOpenPodImageConfig: () -> Unit,
     onOpenSystemHeadsetSettings: () -> Unit,
+    deviceRoute: HuaweiDeviceRoute = HuaweiDeviceRoute.UNSUPPORTED,
 ) {
     val scrollBehavior = MiuixScrollBehavior(rememberTopAppBarState())
     Scaffold(
@@ -422,6 +424,7 @@ private fun EarphonesTabShell(
             onDeviceSelected = onDeviceSelected,
             onConnectedDeviceClick = onConnectedDeviceClick,
             onDismissConnectError = onDismissConnectError,
+            deviceRoute = deviceRoute,
         )
     }
 }

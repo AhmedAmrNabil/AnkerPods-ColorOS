@@ -105,13 +105,16 @@ fun PodDetailPage(
     huaweiAncLevel: Int = 0,
     onHuaweiAncLevelChange: (Int) -> Unit = {},
     boxImagePath: String? = null,
+    deviceRoute: HuaweiDeviceRoute? = null,
 ) {
     val context = LocalContext.current
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val gesturePrefs = remember { context.getSharedPreferences(ConfigManager.PREFS_NAME, Context.MODE_PRIVATE) }
-    val deviceRoute = remember(podName, connectedDeviceAddress) {
-        DeviceRoutePrefs.resolve(gesturePrefs, connectedDeviceAddress, podName)
+    val resolvedRoute = remember(deviceRoute, podName, connectedDeviceAddress) {
+        deviceRoute?.takeIf { it.isSupported }
+            ?: DeviceRoutePrefs.resolve(gesturePrefs, connectedDeviceAddress, podName)
     }
+    val deviceRoute = resolvedRoute
     val gestureControlEnabled = remember(podName, connectedDeviceAddress) {
         deviceRoute == HuaweiDeviceRoute.HUAWEI_FREEBUDS3 &&
             BluetoothAdapter.checkBluetoothAddress(connectedDeviceAddress)

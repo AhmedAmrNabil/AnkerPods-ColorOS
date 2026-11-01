@@ -6,6 +6,7 @@ import moe.chenxy.huaweipods.utils.miuiStrongToast.data.PodParams
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -143,5 +144,54 @@ class SoundcorePacketTest {
         assertEquals(true, battery.right?.isConnected)
         assertEquals(true, battery.case?.isConnected)
         assertEquals(NoiseControlMode.NOISE_CANCELLATION, ancMode)
+        assertEquals(3, result.ancSubMode) // Deep (manual 5)
+    }
+
+    @Test
+    fun testBuildSetSoundModesPacketDiscreteLevels() {
+        // Adaptive (submode 0)
+        val adaptivePacket = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 0)
+        assertEquals(0x00, adaptivePacket[9].toInt() and 0xFF) // ambient: ANC
+        assertEquals(0x50, adaptivePacket[10].toInt() and 0xFF)
+        assertEquals(0x01, adaptivePacket[12].toInt() and 0xFF) // nc_mode: Adaptive
+
+        // Light (submode 1, manual 1)
+        val lightPacket = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 1)
+        assertEquals(0x00, lightPacket[9].toInt() and 0xFF)
+        assertEquals(0x10, lightPacket[10].toInt() and 0xFF) // (1 << 4)
+        assertEquals(0x00, lightPacket[12].toInt() and 0xFF) // nc_mode: Manual
+
+        // Balanced (submode 2, manual 3)
+        val balancedPacket = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 2)
+        assertEquals(0x00, balancedPacket[9].toInt() and 0xFF)
+        assertEquals(0x30, balancedPacket[10].toInt() and 0xFF) // (3 << 4)
+        assertEquals(0x00, balancedPacket[12].toInt() and 0xFF) // nc_mode: Manual
+
+        // Deep (submode 3, manual 5)
+        val deepPacket = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 3)
+        assertEquals(0x00, deepPacket[9].toInt() and 0xFF)
+        assertEquals(0x50, deepPacket[10].toInt() and 0xFF) // (5 << 4)
+        assertEquals(0x00, deepPacket[12].toInt() and 0xFF) // nc_mode: Manual
+    }
+
+    @Test
+    fun testParseSoundModesWithSubMode() {
+        // Inbound sound modes with Adaptive ANC
+        val adaptiveBody = byteArrayOf(0x00, 0x50.toByte(), 0x01, 0x01)
+        val (adaptiveMode, adaptiveSub) = SoundcorePacket.parseSoundModesWithSubMode(adaptiveBody)
+        assertEquals(NoiseControlMode.NOISE_CANCELLATION, adaptiveMode)
+        assertEquals(0, adaptiveSub)
+
+        // Inbound sound modes with Manual Light ANC (manual 1)
+        val lightBody = byteArrayOf(0x00, 0x10, 0x01, 0x00)
+        val (lightMode, lightSub) = SoundcorePacket.parseSoundModesWithSubMode(lightBody)
+        assertEquals(NoiseControlMode.NOISE_CANCELLATION, lightMode)
+        assertEquals(1, lightSub)
+
+        // Inbound sound modes with Transparency
+        val transBody = byteArrayOf(0x01, 0x00, 0x01, 0x00)
+        val (transMode, transSub) = SoundcorePacket.parseSoundModesWithSubMode(transBody)
+        assertEquals(NoiseControlMode.TRANSPARENCY, transMode)
+        assertNull(transSub)
     }
 }

@@ -19,6 +19,17 @@ data class SoundcoreInboundPacket(
     }
 }
 
+data class SoundcoreStateUpdate(
+    val battery: BatteryParams,
+    val ancMode: NoiseControlMode,
+    val ancSubMode: Int? = null,
+)
+
+data class SoundcoreSoundModes(
+    val ancMode: NoiseControlMode,
+    val ancSubMode: Int? = null,
+)
+
 object SoundcorePacket {
     val OUTBOUND_HEADER = byteArrayOf(0x08.toByte(), 0xee.toByte(), 0x00, 0x00, 0x00)
     val INBOUND_HEADER = byteArrayOf(0x09.toByte(), 0xff.toByte(), 0x00, 0x00, 0x01)
@@ -71,16 +82,22 @@ object SoundcorePacket {
      * - byte 0: ambient_sound_mode (0 = ANC, 1 = Transparency, 2 = Normal)
      * - byte 1: (manual_nc << 4) | adaptive_nc
      * - byte 2: transparency_mode
-     * - byte 3: noise_canceling_mode
+     * - byte 3: noise_canceling_mode (0: Manual, 1: Adaptive, 2: Transportation)
      * - byte 4: wind_noise
      * - byte 5: environment_detection
      * - byte 6: transportation_mode
      */
-    fun buildSetSoundModesPacket(mode: NoiseControlMode): ByteArray {
+    fun buildSetSoundModesPacket(mode: NoiseControlMode, subMode: Int? = null): ByteArray {
         val body = when (mode) {
-            NoiseControlMode.NOISE_CANCELLATION -> byteArrayOf(
-                0x00, 0x50, 0x01, 0x00, 0x01, 0x01, 0x03
-            )
+            NoiseControlMode.NOISE_CANCELLATION -> {
+                when (subMode) {
+                    0 -> byteArrayOf(0x00, 0x50.toByte(), 0x01, 0x01, 0x01, 0x01, 0x00) // Adaptive
+                    1 -> byteArrayOf(0x00, 0x10, 0x01, 0x00, 0x01, 0x01, 0x03) // Light (manual 1)
+                    2 -> byteArrayOf(0x00, 0x30, 0x01, 0x00, 0x01, 0x01, 0x03) // Balanced (manual 3)
+                    3 -> byteArrayOf(0x00, 0x50.toByte(), 0x01, 0x00, 0x01, 0x01, 0x03) // Deep (manual 5)
+                    else -> byteArrayOf(0x00, 0x50.toByte(), 0x01, 0x00, 0x01, 0x01, 0x03) // Default to manual deep
+                }
+            }
             NoiseControlMode.TRANSPARENCY -> byteArrayOf(
                 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00
             )
@@ -167,7 +184,7 @@ object SoundcorePacket {
     fun parseA3947StateUpdate(
         body: ByteArray,
         currentBattery: BatteryParams? = null,
-    ): Pair<BatteryParams, NoiseControlMode>? {
+    ): SoundcoreStateUpdate? {
         if (body.size < 6) return null
 
         val leftRawLevel = body[2].toInt() and 0xFF
@@ -213,18 +230,31 @@ object SoundcorePacket {
         )
 
         // Sound mode at offset 126 if present
-        val ancMode = if (body.size > 126) {
-            when (body[126].toInt() and 0xFF) {
+        var ancMode = NoiseControlMode.UNKNOWN
+        var ancSubMode: Int? = null
+        if (body.size > 126) {
+            ancMode = when (body[126].toInt() and 0xFF) {
                 0 -> NoiseControlMode.NOISE_CANCELLATION
                 1 -> NoiseControlMode.TRANSPARENCY
                 2 -> NoiseControlMode.OFF
                 else -> NoiseControlMode.UNKNOWN
             }
-        } else {
-            NoiseControlMode.UNKNOWN
+            if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 129) {
+                val ncMode = body[129].toInt() and 0xFF
+                if (ncMode == 1) {
+                    ancSubMode = 0 // Adaptive
+                } else {
+                    val manual = (body[127].toInt() and 0xF0) ushr 4
+                    ancSubMode = when {
+                        manual <= 2 -> 1 // Light
+                        manual <= 4 -> 2 // Balanced
+                        else -> 3 // Deep
+                    }
+                }
+            }
         }
 
-        return Pair(battery, ancMode)
+        return SoundcoreStateUpdate(battery, ancMode, ancSubMode)
     }
 
     /**
@@ -280,13 +310,30 @@ object SoundcorePacket {
     /**
      * Parses SoundModes update packet body (cmd [0x06, 0x01]).
      */
-    fun parseSoundModes(body: ByteArray): NoiseControlMode {
-        if (body.isEmpty()) return NoiseControlMode.UNKNOWN
-        return when (body[0].toInt() and 0xFF) {
+    fun parseSoundModes(body: ByteArray): NoiseControlMode =
+        parseSoundModesWithSubMode(body).ancMode
+
+    fun parseSoundModesWithSubMode(body: ByteArray): SoundcoreSoundModes {
+        if (body.isEmpty()) return SoundcoreSoundModes(NoiseControlMode.UNKNOWN, null)
+        val mode = when (body[0].toInt() and 0xFF) {
             0 -> NoiseControlMode.NOISE_CANCELLATION
             1 -> NoiseControlMode.TRANSPARENCY
             2 -> NoiseControlMode.OFF
             else -> NoiseControlMode.UNKNOWN
         }
+        val subMode = if (mode == NoiseControlMode.NOISE_CANCELLATION && body.size > 3) {
+            val ncMode = body[3].toInt() and 0xFF
+            if (ncMode == 1) {
+                0 // Adaptive
+            } else {
+                val manual = (body[1].toInt() and 0xF0) ushr 4
+                when {
+                    manual <= 2 -> 1 // Light
+                    manual <= 4 -> 2 // Balanced
+                    else -> 3 // Deep
+                }
+            }
+        } else null
+        return SoundcoreSoundModes(mode, subMode)
     }
 }

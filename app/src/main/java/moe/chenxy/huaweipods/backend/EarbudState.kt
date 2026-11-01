@@ -9,6 +9,7 @@ data class EarbudState(
     val isConnecting: Boolean = false,
     val battery: BatteryParams? = null,
     val ancMode: NoiseControlMode = NoiseControlMode.UNKNOWN,
+    val ancSubMode: Int? = null,
     val device: BluetoothDevice? = null,
     val deviceName: String? = null,
     val deviceAddress: String? = null,

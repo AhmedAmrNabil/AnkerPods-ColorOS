@@ -33,6 +33,7 @@ import moe.chenxy.huaweipods.utils.miuiStrongToast.MiuiStrongToastUtil
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.addHuaweiPodsAction
+import moe.chenxy.huaweipods.utils.miuiStrongToast.data.sendIdentitySharingBroadcast
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
 
@@ -71,9 +72,21 @@ object SoundcoreBackend : EarbudBackend {
                 HuaweiPodsAction.ACTION_ANC_SELECT -> {
                     val status = receivedIntent.getIntExtra("status", NoiseControlMode.UNKNOWN.broadcastStatus)
                     val mode = NoiseControlMode.fromBroadcastStatus(status)
+                    val subMode = if (receivedIntent.hasExtra("submode")) {
+                        receivedIntent.getIntExtra("submode", -1).takeIf { it >= 0 }
+                    } else if (receivedIntent.hasExtra("level")) {
+                        receivedIntent.getIntExtra("level", -1).takeIf { it >= 0 }
+                    } else null
                     if (mode != NoiseControlMode.UNKNOWN) {
-                        setAncMode(mode)
+                        setAncMode(mode, subMode)
                     }
+                }
+                HuaweiPodsAction.ACTION_HUAWEI_ANC_LEVEL_SET -> {
+                    val level = receivedIntent.getIntExtra("level", -1).takeIf { it >= 0 } ?: return
+                    setAncMode(NoiseControlMode.NOISE_CANCELLATION, level)
+                }
+                HuaweiPodsAction.ACTION_HUAWEI_ANC_REFRESH -> {
+                    _state.value.ancSubMode?.let { sendAncLevel(it) }
                 }
                 HuaweiPodsAction.ACTION_CYCLE_ANC -> {
                     cycleAncMode()
@@ -87,6 +100,7 @@ object SoundcoreBackend : EarbudBackend {
                     }
                     _state.value.battery?.let { sendBattery(it) }
                     sendAnc(_state.value.ancMode)
+                    _state.value.ancSubMode?.let { sendAncLevel(it) }
                     sendRequestState()
                 }
             }
@@ -239,11 +253,12 @@ object SoundcoreBackend : EarbudBackend {
             SoundcorePacket.CMD_STATE_UPDATE -> {
                 val parsed = SoundcorePacket.parseA3947StateUpdate(packet.body, _state.value.battery)
                 if (parsed != null) {
-                    val (battery, ancMode) = parsed
-                    _state.update { it.copy(battery = battery, ancMode = ancMode) }
+                    val (battery, ancMode, ancSubMode) = parsed
+                    _state.update { it.copy(battery = battery, ancMode = ancMode, ancSubMode = ancSubMode ?: it.ancSubMode) }
                     ColorOsSystemBatteryBridge.publish(context, device, battery)
                     sendBattery(battery)
                     sendAnc(ancMode)
+                    ancSubMode?.let { sendAncLevel(it) }
                     MiuiStrongToastUtil.showPodsNotificationByMiuiBt(context, battery, device)
                 }
             }
@@ -264,9 +279,10 @@ object SoundcoreBackend : EarbudBackend {
                 MiuiStrongToastUtil.showPodsNotificationByMiuiBt(context, updated, device)
             }
             SoundcorePacket.CMD_SOUND_MODES_INBOUND -> {
-                val ancMode = SoundcorePacket.parseSoundModes(packet.body)
-                _state.update { it.copy(ancMode = ancMode) }
-                sendAnc(ancMode)
+                val soundModes = SoundcorePacket.parseSoundModesWithSubMode(packet.body)
+                _state.update { it.copy(ancMode = soundModes.ancMode, ancSubMode = soundModes.ancSubMode ?: it.ancSubMode) }
+                sendAnc(soundModes.ancMode)
+                soundModes.ancSubMode?.let { sendAncLevel(it) }
                 _state.value.battery?.let {
                     MiuiStrongToastUtil.showPodsNotificationByMiuiBt(context, it, device)
                 }
@@ -295,11 +311,21 @@ object SoundcoreBackend : EarbudBackend {
     }
 
     override fun setAncMode(mode: NoiseControlMode) {
-        val packetBytes = SoundcorePacket.buildSetSoundModesPacket(mode)
+        setAncMode(mode, null)
+    }
+
+    override fun setAncMode(mode: NoiseControlMode, subMode: Int?) {
+        val targetSubMode = subMode ?: if (mode == NoiseControlMode.NOISE_CANCELLATION) {
+            _state.value.ancSubMode ?: 0
+        } else null
+        val packetBytes = SoundcorePacket.buildSetSoundModesPacket(mode, targetSubMode)
         sendRawPacket(packetBytes)
 
-        _state.update { it.copy(ancMode = mode) }
+        _state.update { it.copy(ancMode = mode, ancSubMode = targetSubMode ?: it.ancSubMode) }
         sendAnc(mode)
+        if (targetSubMode != null) {
+            sendAncLevel(targetSubMode)
+        }
 
         val currentDevice = activeDevice
         val currentContext = appContext
@@ -346,6 +372,8 @@ object SoundcoreBackend : EarbudBackend {
             addHuaweiPodsAction(HuaweiPodsAction.ACTION_CYCLE_ANC)
             addHuaweiPodsAction(HuaweiPodsAction.ACTION_REFRESH_STATUS)
             addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_UI_INIT)
+            addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_ANC_LEVEL_SET)
+            addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_ANC_REFRESH)
         }
         runCatching {
             context.registerReceiver(controlReceiver, filter, Context.RECEIVER_EXPORTED)
@@ -412,6 +440,16 @@ object SoundcoreBackend : EarbudBackend {
         }
     }
 
+    private fun sendAncLevel(level: Int) {
+        val ctx = appContext ?: return
+        sendAppBroadcast(ctx, HuaweiPodsAction.ACTION_HUAWEI_ANC_LEVEL_CHANGED) {
+            putExtra("level", level)
+        }
+        sendExternalBroadcast(ctx, HuaweiPodsAction.ACTION_HUAWEI_ANC_LEVEL_CHANGED) {
+            putExtra("level", level)
+        }
+    }
+
     private fun Intent.putBatteryExtras(status: BatteryParams) {
         putExtra("left_battery", status.left?.battery ?: 0)
         putExtra("left_charging", status.left?.isCharging ?: false)
@@ -445,7 +483,7 @@ object SoundcoreBackend : EarbudBackend {
     private fun sendExternalBroadcast(ctx: Context, action: String, fill: Intent.() -> Unit = {}) {
         val currentDevice = activeDevice
         val routeStr = encodeHuaweiDeviceRouteForBroadcast(HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC)
-        listOf("com.heytap.mydevices").forEach { targetPackage ->
+        listOf("com.heytap.mydevices", "com.oplus.wirelesssettings").forEach { targetPackage ->
             Intent(action).apply {
                 putExtra("vendor", "soundcore")
                 putExtra(HuaweiPodsAction.EXTRA_EVENT_ELAPSED_REALTIME, SystemClock.elapsedRealtime())
@@ -457,7 +495,7 @@ object SoundcoreBackend : EarbudBackend {
                 fill()
                 setPackage(targetPackage)
                 addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-                runCatching { ctx.sendBroadcast(this) }
+                runCatching { ctx.sendIdentitySharingBroadcast(this) }
             }
         }
     }

@@ -13,6 +13,9 @@ interface EarbudBackend {
     fun connect(context: Context, device: BluetoothDevice)
     fun disconnect(context: Context, device: BluetoothDevice)
     fun setAncMode(mode: NoiseControlMode)
+    fun setAncMode(mode: NoiseControlMode, subMode: Int?) {
+        setAncMode(mode)
+    }
     fun cycleAncMode()
 
     fun audioSessionAddress(): String?

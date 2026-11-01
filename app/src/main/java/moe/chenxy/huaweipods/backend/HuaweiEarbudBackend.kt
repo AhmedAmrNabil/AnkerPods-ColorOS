@@ -44,6 +44,14 @@ object HuaweiEarbudBackend : EarbudBackend {
         HuaweiHfpController.setAncMode(mode.broadcastStatus)
     }
 
+    override fun setAncMode(mode: NoiseControlMode, subMode: Int?) {
+        if (subMode != null) {
+            HuaweiHfpController.setAncMode(mode.broadcastStatus, subMode)
+        } else {
+            HuaweiHfpController.setAncMode(mode.broadcastStatus)
+        }
+    }
+
     override fun cycleAncMode() {
         val currentMode = _state.value.ancMode
         val nextMode = when (currentMode) {

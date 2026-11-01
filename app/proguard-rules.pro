@@ -24,12 +24,14 @@
     <init>();
     *;
 }
+-keep class androidx.room.** { *; }
 -keep class androidx.work.impl.WorkDatabase_Impl {
     <init>();
     *;
 }
 -keep class androidx.work.impl.** { *; }
 -keep class androidx.work.** { *; }
+-dontwarn androidx.work.**
 
 # Jetpack Glance & Widgets
 -keep class androidx.glance.** { *; }

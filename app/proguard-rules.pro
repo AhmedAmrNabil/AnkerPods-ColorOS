@@ -18,3 +18,20 @@
 
 # Keep Parcelable data classes (used in broadcast extras)
 -keep class moe.chenxy.huaweipods.utils.miuiStrongToast.data.** { *; }
+
+# Room Database reflection
+-keep class * extends androidx.room.RoomDatabase {
+    <init>();
+    *;
+}
+-keep class androidx.work.impl.WorkDatabase_Impl {
+    <init>();
+    *;
+}
+-keep class androidx.work.impl.** { *; }
+-keep class androidx.work.** { *; }
+
+# Jetpack Glance & Widgets
+-keep class androidx.glance.** { *; }
+-keep class moe.chenxy.huaweipods.widget.** { *; }
+-keep class moe.chenxy.huaweipods.tile.** { *; }

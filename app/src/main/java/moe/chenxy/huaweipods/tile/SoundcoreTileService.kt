@@ -15,6 +15,7 @@ import moe.chenxy.huaweipods.pods.NoiseControlMode
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.addHuaweiPodsAction
+import moe.chenxy.huaweipods.utils.miuiStrongToast.data.sendIdentitySharingBroadcast
 
 @RequiresApi(Build.VERSION_CODES.N)
 class SoundcoreTileService : TileService() {
@@ -87,7 +88,7 @@ class SoundcoreTileService : TileService() {
         }
 
         // Query current state
-        sendBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
+        sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
             setPackage("com.android.bluetooth")
             addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
         })
@@ -108,7 +109,7 @@ class SoundcoreTileService : TileService() {
 
         if (!isConnected) {
             // Attempt refresh or show disconnected
-            sendBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
+            sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
                 setPackage("com.android.bluetooth")
                 addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
             })
@@ -128,12 +129,12 @@ class SoundcoreTileService : TileService() {
         currentMode = nextMode
 
         // Broadcast to backend
-        sendBroadcast(Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
+        sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
             setPackage("com.android.bluetooth")
             putExtra("status", nextMode.broadcastStatus)
             addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
         })
-        sendBroadcast(Intent(HuaweiPodsAction.ACTION_CYCLE_ANC).apply {
+        sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_CYCLE_ANC).apply {
             setPackage("com.android.bluetooth")
             addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
         })

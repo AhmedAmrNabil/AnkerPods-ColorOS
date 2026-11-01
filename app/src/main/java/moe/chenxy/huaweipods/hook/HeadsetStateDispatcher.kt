@@ -327,46 +327,66 @@ object HeadsetStateDispatcher : HookContext() {
         val token = audioProbes.begin(address)
         val backend = moe.chenxy.huaweipods.backend.EarbudBackendManager.getBackend(device)
         val sessionGeneration = backend.audioSessionGeneration()
-        queryColorOsLiveAlertAudioProfiles(context, address) { a2dp, hfp ->
+
+        val onProfilesResolved: (Int?, Int?) -> Unit = { a2dp: Int?, hfp: Int? ->
             runCatching {
-            if (!acceptingCallbacks || !audioProbes.accepts(token) ||
-                backend.audioSessionGeneration() != sessionGeneration) return@queryColorOsLiveAlertAudioProfiles
-            val adapterEnabled = runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }
-                .getOrNull()
-            if (savedState != null && moe.chenxy.huaweipods.broadcast.headsetRecoveryShouldClear(a2dp, hfp, adapterEnabled == false)) {
-                // A disconnect may race with the save/close boundary. Confirmed current
-                // states supersede the saved "connected" snapshot even without an owner.
-                moe.chenxy.huaweipods.broadcast.HeadsetLifecycleBinding.deliver(context,
-                    Intent(HuaweiPodsAction.ACTION_PODS_DISCONNECTED).apply {
-                        putExtra("address", address)
-                        putExtra(HuaweiPodsAction.EXTRA_EVENT_ELAPSED_REALTIME, SystemClock.elapsedRealtime())
-                    })
-            }
-            if (adapterEnabled == false) { endAudioSession(context); return@queryColorOsLiveAlertAudioProfiles }
-            val decision = HeadsetAudioSessionPolicy.decide(backend.audioSessionAddress(), address,
-                profile, state, a2dp, hfp, restore)
-            if (a2dp == BluetoothProfile.STATE_CONNECTED) connectedA2dpAddresses.add(address.uppercase())
-            else if (a2dp == BluetoothProfile.STATE_DISCONNECTED) connectedA2dpAddresses.remove(address.uppercase())
-            when (decision) {
-                AudioSessionDecision.CONNECT, AudioSessionDecision.KEEP -> {
-                    if (a2dp == BluetoothProfile.STATE_CONNECTED || hfp == BluetoothProfile.STATE_CONNECTED) {
-                        connectedHuaweiA2dpAddresses.add(address.uppercase())
-                        setHeadsetIcon(context, true, "audio-profile")
-                        startIconWatchdog(context)
-                        if (decision == AudioSessionDecision.CONNECT) {
-                            backend.connect(context, device)
-                            savedState?.let(backend::restoreHotReloadState)
+                if (!acceptingCallbacks || !audioProbes.accepts(token) ||
+                    backend.audioSessionGeneration() != sessionGeneration) return@runCatching
+                val adapterEnabled = runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }
+                    .getOrNull()
+                if (savedState != null && moe.chenxy.huaweipods.broadcast.headsetRecoveryShouldClear(a2dp, hfp, adapterEnabled == false)) {
+                    // A disconnect may race with the save/close boundary. Confirmed current
+                    // states supersede the saved "connected" snapshot even without an owner.
+                    moe.chenxy.huaweipods.broadcast.HeadsetLifecycleBinding.deliver(context,
+                        Intent(HuaweiPodsAction.ACTION_PODS_DISCONNECTED).apply {
+                            putExtra("address", address)
+                            putExtra(HuaweiPodsAction.EXTRA_EVENT_ELAPSED_REALTIME, SystemClock.elapsedRealtime())
+                        })
+                }
+                if (adapterEnabled == false) { endAudioSession(context); return@runCatching }
+                val decision = HeadsetAudioSessionPolicy.decide(backend.audioSessionAddress(), address,
+                    profile, state, a2dp, hfp, restore)
+                if (a2dp == BluetoothProfile.STATE_CONNECTED) connectedA2dpAddresses.add(address.uppercase())
+                else if (a2dp == BluetoothProfile.STATE_DISCONNECTED) connectedA2dpAddresses.remove(address.uppercase())
+                when (decision) {
+                    AudioSessionDecision.CONNECT, AudioSessionDecision.KEEP -> {
+                        if (a2dp == BluetoothProfile.STATE_CONNECTED || hfp == BluetoothProfile.STATE_CONNECTED) {
+                            connectedHuaweiA2dpAddresses.add(address.uppercase())
+                            setHeadsetIcon(context, true, "audio-profile")
+                            startIconWatchdog(context)
+                            if (decision == AudioSessionDecision.CONNECT) {
+                                backend.connect(context, device)
+                                savedState?.let(backend::restoreHotReloadState)
+                            }
                         }
                     }
+                    AudioSessionDecision.DISCONNECT -> {
+                        connectedHuaweiA2dpAddresses.remove(address.uppercase())
+                        moe.chenxy.huaweipods.backend.EarbudBackendManager.getBackend(device).disconnect(context, device)
+                        if (connectedHuaweiA2dpAddresses.isEmpty()) { stopIconWatchdog(); setHeadsetIcon(context, false, "audio-disconnected") }
+                    }
+                    AudioSessionDecision.IGNORE -> Unit
                 }
-                AudioSessionDecision.DISCONNECT -> {
-                    connectedHuaweiA2dpAddresses.remove(address.uppercase())
-                    moe.chenxy.huaweipods.backend.EarbudBackendManager.getBackend(device).disconnect(context, device)
-                    if (connectedHuaweiA2dpAddresses.isEmpty()) { stopIconWatchdog(); setHeadsetIcon(context, false, "audio-disconnected") }
-                }
-                AudioSessionDecision.IGNORE -> Unit
-            }
             }.onFailure { Log.w("HuaweiPods", "Audio Profile session update failed without interrupting Bluetooth", it) }
+        }
+
+        // Direct state check inside Bluetooth process to avoid getProfileProxy deadlock/timeout
+        val a2dpDirect = when {
+            profile == BluetoothProfile.A2DP -> state
+            a2dpService != null -> runCatching { callMethod(a2dpService, "getConnectionState", device) as? Int }.getOrNull()
+            device.address.uppercase() in connectedA2dpAddresses -> BluetoothProfile.STATE_CONNECTED
+            isDeviceConnected(device) -> BluetoothProfile.STATE_CONNECTED
+            else -> null
+        }
+        val hfpDirect = when {
+            profile == BluetoothProfile.HEADSET -> state
+            else -> null
+        }
+
+        if (a2dpDirect != null || hfpDirect != null) {
+            onProfilesResolved(a2dpDirect, hfpDirect)
+        } else {
+            queryColorOsLiveAlertAudioProfiles(context, address, onProfilesResolved)
         }
     }
 
@@ -422,7 +442,11 @@ object HeadsetStateDispatcher : HookContext() {
                             }
                         }
                         val action = HuaweiPodsAction.canonical(receivedIntent.action)
-                        if (!HuaweiPodsBroadcastTrustPolicy.isTrustedAppControlSender(sentFromPackage)) {
+                        val isQueryAction = action in listOf(
+                            HuaweiPodsAction.ACTION_PODS_UI_INIT,
+                            HuaweiPodsAction.ACTION_REFRESH_STATUS,
+                        )
+                        if (!isQueryAction && !HuaweiPodsBroadcastTrustPolicy.isTrustedAppControlSender(sentFromPackage)) {
                             Log.w(
                                 "HuaweiPods",
                                 "Rejected app request from untrusted sender action=$action sender=${sentFromPackage.orEmpty()}",

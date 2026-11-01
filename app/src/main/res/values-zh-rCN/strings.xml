@@ -33,6 +33,7 @@
     <string name="click_action_smart_audio">智慧音频</string>
     <string name="enabled">开启</string>
     <string name="off">关闭</string>
+    <string name="not_connected">未连接</string>
     <string name="low_latency_mode">低时延模式</string>
     <string name="low_latency_auto_apply_summary">开启后会在每次连接时自动重新应用</string>
     <string name="wind_noise_reduction">防风噪</string>

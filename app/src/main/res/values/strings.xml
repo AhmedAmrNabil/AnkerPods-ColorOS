@@ -32,6 +32,7 @@
     <string name="click_action_smart_audio">Smart Audio</string>
     <string name="enabled">On</string>
     <string name="off">Off</string>
+    <string name="not_connected">Not connected</string>
     <string name="low_latency_mode">Low latency mode</string>
     <string name="low_latency_auto_apply_summary">Automatically reapplied after every connection</string>
     <string name="wind_noise_reduction">Wind noise reduction</string>

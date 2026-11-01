@@ -1,6 +1,5 @@
 *.iml
 .gradle
-.kotlin/
 /local.properties
 /.idea/caches
 /.idea/libraries
@@ -11,30 +10,30 @@
 .DS_Store
 /build
 /captures
-/capture_extracted/
-/huaweipods-capture-*.zip
-/tmp/
 .externalNativeBuild
 .cxx
 local.properties
-
-# Local release signing material
-*.jks
-*.keystore
-*.p12
-
-# Ignore tmp file for yuki hook api
-resources/META-INF/yukihookapi_init
+/app/build/
+/app/schemas/
+/core/schemas/
+/features/album/build/
+/features/home/build/
+/features/login/build/
+/features/media/build/
+/features/scan/build/
+/features/search/build/
+/features/splash/build/
+/features/upload/build/
+/features/viewer/build/
+/components/build/
+/sample/build/
+.idea
 opencode.json
-/.idea
-/.qoder
-
-# VitePress website
-/node_modules/
-/docs/.vitepress/cache/
+.vscode
 /docs/.vitepress/dist/
 /.wrangler/
 /.dev.vars
 
 # Local recon artifacts (firmware dumps, APK pulls, reports)
 /.local/
+/OpenSCQ30/

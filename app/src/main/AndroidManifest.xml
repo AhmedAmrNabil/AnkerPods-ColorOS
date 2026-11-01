@@ -113,6 +113,33 @@
             android:name=".smartaudio.SmartAudioImageDownloadJobService"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <service
+            android:name=".tile.SoundcoreTileService"
+            android:icon="@drawable/ic_nav_settings"
+            android:label="@string/noise_control_title"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name=".widget.SoundcoreWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="chen.action.huaweipods.coloros.pods_connected" />
+                <action android:name="chen.action.huaweipods.coloros.pods_disconnected" />
+                <action android:name="chen.action.huaweipods.coloros.pods_battery_changed" />
+                <action android:name="chen.action.huaweipods.coloros.pods_anc_select" />
+                <action android:name="chen.action.huaweipods.coloros.anc_select" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/soundcore_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

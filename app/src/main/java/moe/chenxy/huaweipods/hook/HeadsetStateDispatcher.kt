@@ -350,14 +350,14 @@ object HeadsetStateDispatcher : HookContext() {
                         setHeadsetIcon(context, true, "audio-profile")
                         startIconWatchdog(context)
                         if (decision == AudioSessionDecision.CONNECT) {
-                            HuaweiHfpController.connectPod(context, device)
+                            moe.chenxy.huaweipods.backend.EarbudBackendManager.getBackend(device).connect(context, device)
                             savedState?.let(HuaweiHfpController::restoreHotReloadState)
                         }
                     }
                 }
                 AudioSessionDecision.DISCONNECT -> {
                     connectedHuaweiA2dpAddresses.remove(address.uppercase())
-                    HuaweiHfpController.disconnectedPod(context, device)
+                    moe.chenxy.huaweipods.backend.EarbudBackendManager.getBackend(device).disconnect(context, device)
                     if (connectedHuaweiA2dpAddresses.isEmpty()) { stopIconWatchdog(); setHeadsetIcon(context, false, "audio-disconnected") }
                 }
                 AudioSessionDecision.IGNORE -> Unit
@@ -369,9 +369,9 @@ object HeadsetStateDispatcher : HookContext() {
     @SuppressLint("MissingPermission")
     private fun endAudioSession(context: Context) {
         audioProbes.reset()
-        HuaweiHfpController.audioSessionAddress()?.let { address ->
+        moe.chenxy.huaweipods.backend.EarbudBackendManager.activeBackend.audioSessionAddress()?.let { address ->
             runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter?.getRemoteDevice(address) }
-                .getOrNull()?.let { HuaweiHfpController.disconnectedPod(context, it) }
+                .getOrNull()?.let { moe.chenxy.huaweipods.backend.EarbudBackendManager.getBackend(it).disconnect(context, it) }
         }
         connectedA2dpAddresses.clear()
         connectedHuaweiA2dpAddresses.clear()
@@ -441,7 +441,7 @@ object HeadsetStateDispatcher : HookContext() {
                                 Log.d("HuaweiPods", "connect request from app device=${device.safeDisplayName()}/${device.address}")
                                 val supported = isHuaweiPod(device)
                                 if (supported && isDeviceConnected(device)) {
-                                    HuaweiHfpController.connectPod(context, device)
+                                    moe.chenxy.huaweipods.backend.EarbudBackendManager.getBackend(device).connect(context, device)
                                 } else if (supported) {
                                     notifyRejectedDevice(
                                         context = context,
@@ -626,9 +626,7 @@ object HeadsetStateDispatcher : HookContext() {
 
     @SuppressLint("MissingPermission")
     private fun isHuaweiPod(device: BluetoothDevice): Boolean {
-        return runCatching { device.huaweiDeviceRoute().isSupported }
-            .onFailure { Log.e("HuaweiPods", "Huawei route resolution failed", it) }
-            .getOrDefault(false)
+        return moe.chenxy.huaweipods.backend.EarbudBackendManager.isSupported(device)
     }
 
     private fun isDeviceConnected(device: BluetoothDevice): Boolean {

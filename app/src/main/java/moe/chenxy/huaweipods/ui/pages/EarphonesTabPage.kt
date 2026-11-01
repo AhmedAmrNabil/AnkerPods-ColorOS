@@ -35,6 +35,7 @@ internal fun EarphonesTabPage(
     onDeviceSelected: (BluetoothDevice, HuaweiDeviceRoute) -> Unit,
     onConnectedDeviceClick: () -> Unit,
     onDismissConnectError: () -> Unit,
+    deviceRoute: HuaweiDeviceRoute? = null,
 ) {
     AnimatedContent(
         targetState = showEarphoneDetail,
@@ -56,6 +57,7 @@ internal fun EarphonesTabPage(
                 huaweiAncLevel = huaweiAncLevel,
                 onHuaweiAncLevelChange = onHuaweiAncLevelChange,
                 boxImagePath = boxImagePath,
+                deviceRoute = deviceRoute,
             )
         } else {
             DevicePickerPage(

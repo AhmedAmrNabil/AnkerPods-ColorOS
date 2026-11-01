@@ -53,6 +53,7 @@ import moe.chenxy.huaweipods.config.PodImagePrefs
 import moe.chenxy.huaweipods.config.PodImageChangeNotifier
 import moe.chenxy.huaweipods.config.PodImageResource
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
+import moe.chenxy.huaweipods.pods.isSupported
 import moe.chenxy.huaweipods.broadcast.HuaweiPodsBroadcastTrustPolicy
 import moe.chenxy.huaweipods.navigation.EarphoneDetailNavigationPolicy
 import moe.chenxy.huaweipods.navigation.EarphoneDetailNavigationState
@@ -234,11 +235,17 @@ internal fun MainUI(
     }
     var previewUpdate by remember { mutableStateOf<GitHubRelease?>(null) }
 
-    fun currentDeviceRoute(): HuaweiDeviceRoute = DeviceRoutePrefs.resolve(
-        prefs = prefs,
-        address = connectedDeviceAddress,
-        deviceName = mainTitle.value,
-    )
+    val currentBroadcastRoute = remember { mutableStateOf<String?>(null) }
+
+    fun currentDeviceRoute(): HuaweiDeviceRoute {
+        val fromBroadcast = decodeHuaweiDeviceRouteFromBroadcast(currentBroadcastRoute.value)
+        if (fromBroadcast != null && fromBroadcast.isSupported) return fromBroadcast
+        return DeviceRoutePrefs.resolve(
+            prefs = prefs,
+            address = connectedDeviceAddress,
+            deviceName = mainTitle.value,
+        )
+    }
 
     fun checkForUpdates(manual: Boolean) {
         if (manual) {
@@ -442,6 +449,14 @@ internal fun MainUI(
                 when (HuaweiPodsAction.canonical(intent.action)) {
                     HuaweiPodsAction.ACTION_PODS_ANC_CHANGED -> {
                         connectedDeviceAddress = intent.getStringExtra("address") ?: connectedDeviceAddress
+                        intent.getStringExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE)?.takeIf(String::isNotBlank)?.let {
+                            currentBroadcastRoute.value = it
+                            hookConnected.value = true
+                            hookConnectionState = "connected"
+                        }
+                        intent.getStringExtra("device_name")?.takeIf(String::isNotBlank)?.let {
+                            if (mainTitle.value.isBlank()) mainTitle.value = it
+                        }
                         val route = currentDeviceRoute()
                         val reportedMode = NoiseControlMode.fromBroadcastStatus(
                             intent.getIntExtra("status", NoiseControlMode.UNKNOWN.broadcastStatus),
@@ -486,6 +501,14 @@ internal fun MainUI(
 
                     HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED -> {
                         connectedDeviceAddress = intent.getStringExtra("address") ?: connectedDeviceAddress
+                        intent.getStringExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE)?.takeIf(String::isNotBlank)?.let {
+                            currentBroadcastRoute.value = it
+                            hookConnected.value = true
+                            hookConnectionState = "connected"
+                        }
+                        intent.getStringExtra("device_name")?.takeIf(String::isNotBlank)?.let {
+                            if (mainTitle.value.isBlank()) mainTitle.value = it
+                        }
                         intent.parcelableBatteryStatus()?.let { batteryParams.value = it }
                     }
 
@@ -501,6 +524,9 @@ internal fun MainUI(
                         )
                         connectingDeviceAddress = null
                         mainTitle.value = deviceName ?: ""
+                        intent.getStringExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE)?.takeIf(String::isNotBlank)?.let {
+                            currentBroadcastRoute.value = it
+                        }
                         val route = decodeHuaweiDeviceRouteFromBroadcast(
                             intent.getStringExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE),
                         ) ?: currentDeviceRoute()
@@ -543,6 +569,7 @@ internal fun MainUI(
                         hookConnectionState = intent.getStringExtra("state") ?: hookConnectionState
                         if (hookConnectionState == "disconnected") {
                             val route = currentDeviceRoute()
+                            currentBroadcastRoute.value = null
                             connectedDeviceAddress = ""
                             mainTitle.value = ""
                             batteryParams.value = BatteryParams()
@@ -597,6 +624,7 @@ internal fun MainUI(
 
                     HuaweiPodsAction.ACTION_PODS_DISCONNECTED -> {
                         val route = currentDeviceRoute()
+                        currentBroadcastRoute.value = null
                         mainTitle.value = ""
                         connectedDeviceAddress = ""
                         batteryParams.value = BatteryParams()

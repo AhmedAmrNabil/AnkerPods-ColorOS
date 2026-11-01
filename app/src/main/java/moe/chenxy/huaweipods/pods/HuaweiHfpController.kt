@@ -500,6 +500,9 @@ object HuaweiHfpController {
             stopBackgroundBatteryRefresh()
             ColorOsSystemBatteryBridge.clear(context, device)
             MiuiStrongToastUtil.cancelPodsNotificationByMiuiBt(context, device)
+            moe.chenxy.huaweipods.backend.HuaweiEarbudBackend.updateConnectionState(isConnected = false, isConnecting = false)
+            moe.chenxy.huaweipods.backend.HuaweiEarbudBackend.updateBattery(null)
+            moe.chenxy.huaweipods.backend.HuaweiEarbudBackend.updateAncMode(NoiseControlMode.UNKNOWN)
             sendAppBroadcast(HuaweiPodsAction.ACTION_PODS_DISCONNECTED) {
                 putExtra("address", device.address)
             }
@@ -2410,6 +2413,10 @@ object HuaweiHfpController {
     private fun sendConnectionState(state: String) {
         val currentDevice = device ?: return
         val deviceName = currentDevice.name ?: currentDevice.alias ?: ""
+        moe.chenxy.huaweipods.backend.HuaweiEarbudBackend.updateConnectionState(
+            isConnected = state == "connected",
+            isConnecting = state == "connecting"
+        )
         sendAppBroadcast(HuaweiPodsAction.ACTION_PODS_CONNECTION_STATE_CHANGED) {
             putExtra("address", currentDevice.address)
             putExtra("device_name", deviceName)
@@ -2422,6 +2429,7 @@ object HuaweiHfpController {
         cached: Boolean = currentBatteryIsCached,
     ) {
         if (!cached) {
+            moe.chenxy.huaweipods.backend.HuaweiEarbudBackend.updateBattery(battery)
             val currentContext = context
             val currentDevice = device
             if (currentContext != null && currentDevice != null) {
@@ -2454,6 +2462,9 @@ object HuaweiHfpController {
         state: HuaweiAncState,
         cached: Boolean = currentAncIsCached,
     ) {
+        if (!cached) {
+            moe.chenxy.huaweipods.backend.HuaweiEarbudBackend.updateAncMode(state.mode)
+        }
         sendAppBroadcast(HuaweiPodsAction.ACTION_PODS_ANC_CHANGED) {
             putExtra("status", state.mode.broadcastStatus)
             state.subMode?.let { putExtra("submode", it) }

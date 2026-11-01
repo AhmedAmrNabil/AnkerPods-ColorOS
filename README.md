@@ -112,9 +112,19 @@ HuaweiPods ColorOS 把华为耳机的电量和控制接入 ColorOS 的快速设�
 
 两个版本使用相同应用 ID，不能同时安装。
 
+## Soundcore 适配（Liberty 4 NC / A3947）
+
+本项目已扩展支持 Soundcore 蓝牙耳机（以 Liberty 4 NC / A3947 为基准）：
+- **纯 Kotlin 协议栈**：基于 [OpenSCQ30](https://github.com/OpenSCQ30/OpenSCQ30)（GPL-3.0）逆向协议，原生实现 Soundcore RFCOMM 封包帧、校验码与状态解析。
+- **系统电量集成**：通过 `ColorOsSystemBatteryBridge` 写入 ColorOS `IOplusRemoteDevice` 原生电量通道，支持状态栏与系统设置显示。
+- **降噪模式切换**：支持正常（关闭）/ 降噪（ANC）/ 通透模式切换，并支持在“我的设备”与通知中显示。
+- **控制中心磁贴（Quick Settings Tile）**：通过 `SoundcoreTileService` 实现下拉快捷设置磁贴，显示当前降噪模式并支持一键轮换。
+- **桌面微件（Jetpack Glance Widget）**：提供实时桌面微件，展示左右耳及耳机盒电量、充电状态，并提供三档降噪模式直达控制。
+
 ## 致谢
 
 - [HuaweiPods](https://github.com/Nshpiter/HuaweiPods) by Nshpiter（直接上游）
+- [OpenSCQ30](https://github.com/OpenSCQ30/OpenSCQ30) by OpenSCQ30 贡献者（Soundcore 耳机 RFCOMM 协议逆向参考，GPL-3.0）
 - [OppoPods](https://github.com/1812z/OppoPods) by 1812z（HuaweiPods 直接基于）
 - [OppoPods](https://github.com/Leaf-lsgtky/OppoPods) by Leaf-lsgtky（原始项目）
 - [HyperPods](https://github.com/Art-Chen/HyperPods) by Art_Chen（耳机系统接入参考）

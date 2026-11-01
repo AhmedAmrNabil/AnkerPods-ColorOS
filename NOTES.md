@@ -142,3 +142,76 @@ interface EarbudBackend {
 2. **Minimal packet surface**: The protocol for A3947 (Liberty 4 NC) for the required MVP scope (battery L/R/case and 3-way ANC switching) consists of only 3 outbound packets (Request State, Set Sound Modes, ACK) and 4 inbound packets (State Update, Battery Level, Battery Charging, Sound Modes).
 3. **Robustness & Verification**: Porting these cleanly into Kotlin takes ~200 lines, compiles in seconds, and can be 100% verified against byte fixtures from OpenSCQ30's unit tests.
 4. Per `PLAN.md`: *"Default to B if the model's needed packets are small and A's toolchain is painful. Otherwise use A. Do not mix them."* Option B strictly meets this criterion.
+
+---
+
+## Phase 2: Core Abstraction Completed
+
+- Created `moe.chenxy.huaweipods.backend.EarbudBackend` and `EarbudState`.
+- Implemented `HuaweiEarbudBackend` wrapping `HuaweiHfpController`.
+- Implemented `EarbudBackendManager` to route device connections dynamically based on device identity.
+- Refactored `HeadsetStateDispatcher` to delegate audio connection handling through `EarbudBackendManager`.
+- Maintained 100% backward compatibility for all existing Huawei models and unit tests.
+
+---
+
+## Phase 3: Soundcore Protocol & Backend Completed
+
+- **Protocol Codec (`SoundcorePacket.kt`)**:
+  - Implemented framing, checksum validation, command parsing, and outbound packet generation.
+  - Offsets verified directly from `OpenSCQ30/lib/src/devices/soundcore/a3947.rs`:
+    - `body[2]`: Left battery level (0..5) -> percentage
+    - `body[3]`: Right battery level (0..5) -> percentage
+    - `body[4]`: Left charging flag
+    - `body[5]`: Right charging flag
+    - `body[126]`: Ambient sound mode (0=ANC, 1=Transparency, 2=Normal)
+    - `body[139]`: Case battery level (0..5) -> percentage
+  - Outbound commands:
+    - State request: `[0x01, 0x01]`
+    - Noise control mode: `[0x06, 0x81]` with 7-byte payload
+- **Unit Tests (`SoundcorePacketTest.kt`)**:
+  - Validated checksum calculations, framing integrity, state update payload parsing, and ANC outbound packet generation against official OpenSCQ30 test vectors.
+- **RFCOMM Backend (`SoundcoreBackend.kt`)**:
+  - Manages RFCOMM connection with vendor UUID fallback to SerialPort standard UUID.
+  - Periodic keepalive state requests every 30s.
+  - Direct integration into `ColorOsSystemBatteryBridge` to supply status bar and Settings battery metrics.
+  - Broadcast emission (`ACTION_PODS_BATTERY_CHANGED`, `ACTION_PODS_ANC_CHANGED`, `ACTION_PODS_CONNECTED`, `ACTION_PODS_DISCONNECTED`).
+- **Device Route & Capabilities**:
+  - Added `SOUNDCORE_LIBERTY_4_NC` to `HuaweiDeviceRoute` and registered in `DeviceRoutePrefs`.
+  - Configured capabilities: `supportsAnc = true`, `supportsTransparency = true`, battery channels enabled.
+
+---
+
+## Phase 4 & 5: System Integrations, Tile & Glance Widget Completed
+
+- **ColorOS Integrations**:
+  - Battery channels pushed via `ColorOsSystemBatteryBridge.publish()`.
+  - "My Devices" noise control options generated automatically based on `route.supportsAnc` and `route.supportsTransparency`.
+  - Status notification published with battery and ANC cycling action.
+- **Quick Settings Tile (`SoundcoreTileService.kt`)**:
+  - Subscribed to HuaweiPods broadcast events and active backend state.
+  - Cycles ANC modes: Normal -> Noise Cancelling -> Transparency -> Normal.
+  - Displays mode subtitle and battery summary (`L:xx% R:xx%`).
+- **Desktop Widget (`SoundcoreWidget.kt`, `SoundcoreWidgetReceiver.kt`)**:
+  - Built using Jetpack Glance (`androidx.glance:glance-appwidget:1.1.1`).
+  - Displays real-time Left, Right, and Case battery percentages with charging indicators.
+  - Includes 3 distinct ANC mode buttons (Normal / ANC / Transparency) for direct selection.
+  - Handles system widget updates, refresh actions, and broadcast triggers.
+- **Manifest & Resources**:
+  - Registered QS tile and Glance AppWidgetProvider in `AndroidManifest.xml`.
+  - Added `soundcore_widget_info.xml`.
+  - Added localized strings for connection states in English and Simplified Chinese.
+
+---
+
+## Phase 6: Final Verification & Build
+
+- **Release Build Verification**:
+  - Executed `nix develop -c ./gradlew :app:assembleRelease`.
+  - Result: ProGuard/R8 minify and resource shrinking completed cleanly. Release APK generated.
+- **Test Suite**:
+  - Executed `nix develop -c ./gradlew :app:testDebugUnitTest`.
+  - Result: All 636 unit tests passed (0 failures, 0 errors).
+- **Compliance & Attribution**:
+  - Both HuaweiPods-ColorOS and OpenSCQ30 are licensed under GPL-3.0.
+  - Added attribution in `README.md` and `README_EN.md` referencing OpenSCQ30 and its contributors.

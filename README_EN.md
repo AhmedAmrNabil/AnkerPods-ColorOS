@@ -112,9 +112,19 @@ For a new ColorOS version, connect the phone and run `./tools/capture-coloros-en
 
 Both builds use the same application ID and cannot be installed side by side.
 
+## Soundcore Support (Liberty 4 NC / A3947)
+
+This project has extended support for Soundcore earbuds (specifically Liberty 4 NC / A3947):
+- **Pure Kotlin Protocol Stack**: Cleanroom Kotlin implementation of the Soundcore RFCOMM packet framing, checksums, and state parsing ported from [OpenSCQ30](https://github.com/OpenSCQ30/OpenSCQ30) (GPL-3.0).
+- **ColorOS Battery Channel**: Pushes L/R/case battery percentages directly into the ColorOS system battery channel (`IOplusRemoteDevice`) for native status bar and Settings display.
+- **Noise Control**: Normal (Off), Noise Cancellation (ANC), and Transparency modes switchable via "My Devices" and persistent notifications.
+- **Quick Settings Tile**: Android `TileService` to cycle ANC modes directly from the notification shade quick settings.
+- **Home Screen Widget**: Jetpack Glance app widget displaying live L/R/case battery levels, charging indicators, and 3-button ANC mode selection.
+
 ## Credits
 
 - [HuaweiPods](https://github.com/Nshpiter/HuaweiPods) by Nshpiter (direct upstream)
+- [OpenSCQ30](https://github.com/OpenSCQ30/OpenSCQ30) by OpenSCQ30 contributors — Soundcore RFCOMM protocol reference (GPL-3.0)
 - [OppoPods](https://github.com/1812z/OppoPods) by 1812z (base of HuaweiPods)
 - [OppoPods](https://github.com/Leaf-lsgtky/OppoPods) by Leaf-lsgtky (original project)
 - [HyperPods](https://github.com/Art-Chen/HyperPods) by Art_Chen (system earphone integration reference)

@@ -90,6 +90,11 @@ object SoundcoreBackend : EarbudBackend {
         return SoundcoreDeviceIdentifier.isSoundcoreDevice(device)
     }
 
+    fun init(context: Context) {
+        appContext = context.applicationContext ?: context
+        registerControlReceiver(context)
+    }
+
     @SuppressLint("MissingPermission")
     override fun connect(context: Context, device: BluetoothDevice) {
         if (!isSupported(device)) return
@@ -97,6 +102,7 @@ object SoundcoreBackend : EarbudBackend {
 
         appContext = context.applicationContext ?: context
         activeDevice = device
+        moe.chenxy.huaweipods.hook.MiBluetoothToastHook.markConnected(device.address)
 
         val deviceName = runCatching { device.name ?: device.alias }.getOrNull()
             ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947

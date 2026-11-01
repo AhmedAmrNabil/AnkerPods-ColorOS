@@ -107,6 +107,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.androidx.activity.compose)
+    implementation("androidx.glance:glance-appwidget:1.1.1")
 
     // MIUIX
     implementation(libs.miuix)

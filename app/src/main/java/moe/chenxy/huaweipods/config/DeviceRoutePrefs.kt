@@ -169,6 +169,7 @@ object DeviceRoutePrefs {
         HuaweiDeviceRoute.HUAWEI_FREEARC -> "freearc"
         HuaweiDeviceRoute.HUAWEI_EYEWEAR -> "eyewear"
         HuaweiDeviceRoute.HUAWEI_EYEWEAR2 -> "eyewear2"
+        HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC -> "soundcore_liberty_4_nc"
         HuaweiDeviceRoute.UNSUPPORTED -> "unsupported"
     }
 
@@ -191,6 +192,7 @@ object DeviceRoutePrefs {
         "freearc" -> HuaweiDeviceRoute.HUAWEI_FREEARC
         "eyewear" -> HuaweiDeviceRoute.HUAWEI_EYEWEAR
         "eyewear2" -> HuaweiDeviceRoute.HUAWEI_EYEWEAR2
+        "soundcore_liberty_4_nc" -> HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
         else -> null
     }
 

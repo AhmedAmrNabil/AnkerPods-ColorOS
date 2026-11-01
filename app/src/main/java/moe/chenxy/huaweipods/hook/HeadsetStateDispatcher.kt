@@ -152,6 +152,7 @@ object HeadsetStateDispatcher : HookContext() {
             "connected_a2dp_addresses",
             ArrayList(connectedA2dpAddresses),
         )
+        moe.chenxy.huaweipods.backend.EarbudBackendManager.activeBackend.saveHotReloadState(outState)
         HuaweiHfpController.saveHotReloadState(outState)
     }
 
@@ -171,7 +172,8 @@ object HeadsetStateDispatcher : HookContext() {
         }
         // Controller 只维护一个 HFP 会话。优先恢复旧代实际持有的设备，避免多设备
         // 遍历时后一个地址覆盖已恢复的电量并使通知恢复任务失效。
-        val savedAddress = HuaweiHfpController.hotReloadSessionAddress(savedState)
+        val savedAddress = moe.chenxy.huaweipods.backend.EarbudBackendManager.activeBackend.hotReloadSessionAddress(savedState)
+            ?: HuaweiHfpController.hotReloadSessionAddress(savedState)
         if (!savedAddress.isNullOrBlank()) restoredAddresses.add(savedAddress.uppercase())
         val candidates = if (!savedAddress.isNullOrBlank()) listOf(savedAddress) else restoredAddresses.toList()
         candidates.forEach { address ->
@@ -208,6 +210,7 @@ object HeadsetStateDispatcher : HookContext() {
         connectedHuaweiA2dpAddresses.clear()
         activeRouteProbe.set(null)
         lastRouteProbeStartedAtMs.clear()
+        moe.chenxy.huaweipods.backend.EarbudBackendManager.activeBackend.closeForHotReload()
         HuaweiHfpController.closeForHotReload()
         val liveAlertStopped = moe.chenxy.huaweipods.broadcast.HeadsetLifecycleBinding.closeForHotReload()
         val rfcommStopped = HuaweiL2capAncController.closeForHotReload()
@@ -322,11 +325,12 @@ object HeadsetStateDispatcher : HookContext() {
         if (!acceptingCallbacks || !isHuaweiPod(device)) return
         val address = device.address
         val token = audioProbes.begin(address)
-        val sessionGeneration = HuaweiHfpController.audioSessionGeneration()
+        val backend = moe.chenxy.huaweipods.backend.EarbudBackendManager.getBackend(device)
+        val sessionGeneration = backend.audioSessionGeneration()
         queryColorOsLiveAlertAudioProfiles(context, address) { a2dp, hfp ->
             runCatching {
             if (!acceptingCallbacks || !audioProbes.accepts(token) ||
-                HuaweiHfpController.audioSessionGeneration() != sessionGeneration) return@queryColorOsLiveAlertAudioProfiles
+                backend.audioSessionGeneration() != sessionGeneration) return@queryColorOsLiveAlertAudioProfiles
             val adapterEnabled = runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }
                 .getOrNull()
             if (savedState != null && moe.chenxy.huaweipods.broadcast.headsetRecoveryShouldClear(a2dp, hfp, adapterEnabled == false)) {
@@ -339,7 +343,7 @@ object HeadsetStateDispatcher : HookContext() {
                     })
             }
             if (adapterEnabled == false) { endAudioSession(context); return@queryColorOsLiveAlertAudioProfiles }
-            val decision = HeadsetAudioSessionPolicy.decide(HuaweiHfpController.audioSessionAddress(), address,
+            val decision = HeadsetAudioSessionPolicy.decide(backend.audioSessionAddress(), address,
                 profile, state, a2dp, hfp, restore)
             if (a2dp == BluetoothProfile.STATE_CONNECTED) connectedA2dpAddresses.add(address.uppercase())
             else if (a2dp == BluetoothProfile.STATE_DISCONNECTED) connectedA2dpAddresses.remove(address.uppercase())
@@ -350,8 +354,8 @@ object HeadsetStateDispatcher : HookContext() {
                         setHeadsetIcon(context, true, "audio-profile")
                         startIconWatchdog(context)
                         if (decision == AudioSessionDecision.CONNECT) {
-                            moe.chenxy.huaweipods.backend.EarbudBackendManager.getBackend(device).connect(context, device)
-                            savedState?.let(HuaweiHfpController::restoreHotReloadState)
+                            backend.connect(context, device)
+                            savedState?.let(backend::restoreHotReloadState)
                         }
                     }
                 }
@@ -483,6 +487,7 @@ object HeadsetStateDispatcher : HookContext() {
             appRequestReceiver = receiver
             appRequestReceiverContext = context
             appRequestReceiverRegistered = true
+            moe.chenxy.huaweipods.backend.soundcore.SoundcoreBackend.init(context)
         }
     }
 

@@ -122,6 +122,10 @@ object MiBluetoothToastHook : HookContext() {
     private val receiverRegistrationLock = Any()
     private val activeNotificationAddresses = ConcurrentHashMap.newKeySet<String>()
     private val disconnectedNotificationAddresses = ConcurrentHashMap.newKeySet<String>()
+
+    fun markConnected(address: String) {
+        disconnectedNotificationAddresses.remove(address)
+    }
     private val officialPopupShownAddresses = ConcurrentHashMap.newKeySet<String>()
     private val lastCaseReported = ConcurrentHashMap<String, Boolean>()
     private val lastCaseOpenPopupAt = ConcurrentHashMap<String, Long>()

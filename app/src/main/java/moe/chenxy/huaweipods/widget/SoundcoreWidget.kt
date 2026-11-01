@@ -2,6 +2,7 @@ package moe.chenxy.huaweipods.widget
 
 import android.content.Context
 import android.content.Intent
+import moe.chenxy.huaweipods.utils.miuiStrongToast.data.sendIdentitySharingBroadcast
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -243,7 +244,7 @@ class SetAncActionCallback : ActionCallback {
             putExtra("status", targetMode)
             addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
         }
-        context.sendBroadcast(intent)
+        context.sendIdentitySharingBroadcast(intent)
 
         updateAppWidgetState(context, glanceId) { prefs ->
             prefs[SoundcoreWidgetKeys.KEY_ANC_MODE] = targetMode
@@ -287,6 +288,6 @@ class RefreshWidgetActionCallback : ActionCallback {
             setPackage("com.android.bluetooth")
             addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
         }
-        context.sendBroadcast(intent)
+        context.sendIdentitySharingBroadcast(intent)
     }
 }

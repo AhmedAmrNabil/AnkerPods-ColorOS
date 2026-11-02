@@ -540,17 +540,21 @@ hookBefore(setText) {
 注意 `HookParam.args` 是只读 `List`，改参数必须用 `proceedWithArgs(...)`；直接写 `args[0] = x`
 编译不过（`No 'set' operator method providing array access`）。
 
-### 9.15 设置里的「已连接的设备」页：规则已改，真机待复验
+### 9.15 「已连接的设备」页：真机验证通过
 
-用 `Settings$BluetoothDeviceDetailActivity` 深链实际落到 `com.android.settings.SubSettings`
-的「已连接的设备」页，那一行同样是单值 `已开启。电量：100%。`。
+![平板已连接的设备页三段](.local/recon/verify6-07-connected-devices.png)
 
-原本靠 Activity 类名（含 `BluetoothDeviceDetail`）做门禁，这一页类名是 `SubSettings`，够不着。
-所以把门禁从「类名」换成「文本形状」，并在规则里加了一条硬约束：**冒号前必须带连接态**
-（`已开启/已连接/已配对/已关闭/已断开/Connected/On/Off`）。
+```
+HUAWEI FreeClip
+已开启。电量： 左100%，右100%，盒88%。
+```
 
-理由：手机自己的电池页写的是 `电量：85%`，没有这类前缀；加了这条之后，单值改写可以在整个
-`com.android.settings` 进程里放开，不必再靠类名兜底。单测覆盖了两个方向：
+这一页的 Activity 是 `com.android.settings.SubSettings`（不是 `BluetoothDeviceDetail*`），
+所以原来按类名的门禁够不着。改成按**文本形状**判定，并在规则里加硬约束：
+冒号前必须带连接态（`已开启/已连接/已配对/已关闭/已断开/Connected/On/Off`）。
+
+理由：手机自己的电池页写的是 `电量：85%`，没有这类前缀；加了这条约束之后，单值改写
+可以在整个 `com.android.settings` 进程放开，不必再靠类名兜底。单测两个方向都覆盖：
 
 ```kotlin
 assertNull(rewriteSingleValue("电量：85%", triple))        // 手机电池页：不动
@@ -559,13 +563,14 @@ assertEquals("已连接。电量： 左 88%，右 92%，盒 100%。",
     rewriteSingleValue("已连接。电量：92%。", triple))      // 耳机摘要：三段
 ```
 
-**状态：代码已提交，真机没复验完。** 复验时手机在被人工使用、LSPosed 日志又连续换文件，
-这一页始终没抓到「改完之后」的截图，所以不算已验证。下次复验命令：
+复验命令（比盲点坐标可靠）：
 
 ```bash
 adb shell 'am start -n "com.android.settings/com.android.settings.Settings\$BluetoothDeviceDetailActivity" \
   -e device_address 30:A9:98:CB:C4:54'
 ```
+
+前提是 LSPosed 里 `com.android.settings` 已勾选——见 §9.18，这条不会自动生效。
 ### 9.16 LSPosed 日志会换文件（排查时最坑的一条）
 
 模块每次重装 APK，LSPosed 会新开一个日志文件：

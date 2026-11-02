@@ -364,3 +364,16 @@ Bluetooth settings battery summary patched rows=1 triple=ColorOsBatteryTriple(le
 
 **发布版阈值仍是 20%**，与宿主 `*_low` 图标一致；这次改动没有留在仓库里
 （`git diff` 为空，验证构建仅为取证）。
+### 9.8 快速设备连接弹窗：三段电量实证
+
+断开再连蓝牙让宿主自己弹卡片（`com.heytap.accessory/com.oplus.pantaconnect.appcore.devicediscovery.ui.DialogActivity`），
+弹窗正文是三段：
+
+```
+HUAWEI FreeClip
+左耳 100% · 右耳 100% · 耳机盒 100%
+```
+
+截图：`.local/recon/verify3-09-popup-b.png`。这条路径走的是
+`IOplusRemoteDevice.notifyBatteryLevelChanged` 的数组，和 9.6 的蓝牙设置行同源，
+所以"设置页缺盒子"能确定是列表行模板问题，不是数据问题。

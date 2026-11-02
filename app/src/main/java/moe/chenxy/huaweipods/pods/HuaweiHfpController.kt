@@ -2599,6 +2599,8 @@ object HuaweiHfpController {
         val currentDevice = device
         listOf(
             "com.heytap.mydevices",
+            // 蓝牙设置列表行的电量摘要由宿主自己拼，只带左右耳；设置进程要靠这条广播拿到盒电量再补齐。
+            "com.oplus.wirelesssettings",
         ).forEach { targetPackage ->
             Intent(action).apply {
                 putExtra("vendor", "huawei")

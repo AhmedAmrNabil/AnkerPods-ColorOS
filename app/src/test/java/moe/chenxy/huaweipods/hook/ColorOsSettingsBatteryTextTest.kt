@@ -1,0 +1,71 @@
+package moe.chenxy.huaweipods.hook
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+/**
+ * 蓝牙设置行电量摘要改写：只在"认得出是电量行"时补盒子，其它文本一律不动。
+ *
+ * 真机原文是 `使用中，电量：左 100%，右 100%`；宿主没有盒子的格式化逻辑，
+ * 所以这里要把三段拼回去，同时保证「蓝牙」「已连接」这类文本不被误改。
+ */
+class ColorOsSettingsBatteryTextTest {
+
+    @Test
+    fun `appends case to the connected summary`() {
+        assertEquals(
+            "使用中，电量：左 100%，右 100%，盒 45%",
+            ColorOsSettingsBatteryText.rewrite("使用中，电量：左 100%，右 100%", 100, 100, 45),
+        )
+    }
+
+    @Test
+    fun `keeps english colon separator`() {
+        assertEquals(
+            "Connected, battery: 左 98%，右 97%，盒 60%",
+            ColorOsSettingsBatteryText.rewrite("Connected, battery: 左 98%，右 97%", 98, 97, 60),
+        )
+    }
+
+    @Test
+    fun `drops missing parts instead of writing placeholders`() {
+        assertEquals(
+            "使用中，电量：左 100%，盒 45%",
+            ColorOsSettingsBatteryText.rewrite("使用中，电量：左 100%，右 12%", 100, null, 45),
+        )
+    }
+
+    @Test
+    fun `returns null when nothing changes`() {
+        assertNull(ColorOsSettingsBatteryText.rewrite("使用中，电量：左 100%，右 100%，盒 45%", 100, 100, 45))
+    }
+
+    @Test
+    fun `returns null when only one part is available`() {
+        assertNull(ColorOsSettingsBatteryText.rewrite("使用中，电量：左 100%，右 100%", 100, null, null))
+    }
+
+    @Test
+    fun `ignores text that is not a battery summary`() {
+        assertNull(ColorOsSettingsBatteryText.rewrite("蓝牙", 100, 100, 45))
+        assertNull(ColorOsSettingsBatteryText.rewrite("已连接", 100, 100, 45))
+        assertNull(ColorOsSettingsBatteryText.rewrite("使用中", 100, 100, 45))
+        assertNull(ColorOsSettingsBatteryText.rewrite(null, 100, 100, 45))
+        assertNull(ColorOsSettingsBatteryText.rewrite("   ", 100, 100, 45))
+    }
+
+    @Test
+    fun `ignores colon without a battery body`() {
+        assertNull(ColorOsSettingsBatteryText.rewrite("使用中，电量：", 100, 100, 45))
+        assertNull(ColorOsSettingsBatteryText.rewrite("手机名称：一加 15", 100, 100, 45))
+    }
+
+    @Test
+    fun `clamps out of range values`() {
+        assertEquals(
+            "使用中，电量：左 100%，右 0%",
+            ColorOsSettingsBatteryText.rewrite("使用中，电量：左 120%，右 -5%", 120, -5, null),
+        )
+    }
+}

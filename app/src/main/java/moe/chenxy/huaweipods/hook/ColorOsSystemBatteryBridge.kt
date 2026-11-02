@@ -66,6 +66,8 @@ internal object ColorOsSystemBatteryBridge {
     @Volatile
     private var remoteDeviceUnavailableLogged = false
     @Volatile
+    private var lastPublishSignature: String? = null
+    @Volatile
     private var cachedRemoteDevice: Pair<ClassLoader, RemoteDevice>? = null
 
     private val enabled: Boolean by lazy {
@@ -113,7 +115,12 @@ internal object ColorOsSystemBatteryBridge {
         // OPLUS 在右耳缺席时会把 -1 当作最低值写入标准电量；这里再用在线耳机较低值校正。
         val systemLevel = colorOsSystemBatteryLevel(battery)
         if (systemLevel >= 0) setAndroidBatteryLevel(context, device, systemLevel)
-        Log.d(TAG, "ColorOS battery published info=${info.joinToString()} system=$systemLevel inEar=$inEar")
+        // 只在数值变化时记一条：蓝牙设置页显示几段，全靠这个数组的内容，排查时必须看得到。
+        val signature = info.joinToString() + "|" + systemLevel + "|" + inEar
+        if (signature != lastPublishSignature) {
+            lastPublishSignature = signature
+            Log.i(TAG, "ColorOS battery published info=${info.joinToString()} system=$systemLevel inEar=$inEar")
+        }
     }
 
     fun clear(context: Context, device: BluetoothDevice) {

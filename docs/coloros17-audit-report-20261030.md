@@ -301,3 +301,45 @@ Device Space home overlay attached name=FreeClip address=30:A9:98:CB:C4:54 text=
 - 按名字匹配保留为兜底（卡片字段里没有 id 的机型）。
 - 新增单测：`deviceIdFor` 真机向量、大小写/空格归一、空地址返回 null、`matchesDeviceId` 正反例。
 - 截图：`.local/recon/verify2-20-address-match.png`（浅色主题下的最终形态）。
+### 9.6 蓝牙设置列表行：从"只有左右耳"补到三段
+
+设置页那一行不是模块画的，是宿主自己拼的：
+
+```
+HUAWEI FreeClip  [AAC]
+使用中，电量：左 100%，右 100%          ← 没有盒子
+```
+
+但同一份数据喂给连接弹窗时三段都在（`左耳 100% · 右耳 100% · 耳机盒 100%`），
+蓝牙进程里的发布日志也证明数组完整：
+
+```
+ColorOS battery published info=100, 100, 100, 2, 2, 2 system=100 inEar=null
+```
+
+结论：数据不缺，缺的是列表行的格式模板 —— 宿主那行只格式化左右耳。只能在文本层补。
+
+**做法**（`ColorOsWirelessSettingsHook`）：
+
+1. 蓝牙进程的 `sendExternalBroadcast` 目标加入 `com.oplus.wirelesssettings`（原来只发 `com.heytap.mydevices`）。
+2. 设置进程 hook `Application.onCreate`，注册电量广播接收器；发送方按 `sentFromUid` 校验，
+   只认蓝牙进程（复用 `HuaweiPodsBroadcastTrustPolicy.shouldAcceptMyDevicesStateBroadcast`）。
+3. 收到电量后遍历本进程窗口，把认得出的电量行交给纯逻辑
+   `ColorOsSettingsBatteryText.rewrite(...)` 补成 `左…，右…，盒…`；认不出就一个字符不动。
+4. 列表渲染比 `Application.onCreate` 晚，注册后补两次（1.2s / 3s），之后每次电量广播都会再刷。
+
+真机结果：
+
+```
+使用中，电量：左 100%，右 100%，盒 100%
+```
+
+```
+Bluetooth settings battery summary patched rows=1 triple=ColorOsBatteryTriple(left=100, right=100, case=100)
+```
+
+截图：`.local/recon/verify3-04-btsettings-patched.png`。
+
+- 单测 `ColorOsSettingsBatteryTextTest`（9 条）：中文/英文模板、缺段丢段、无变化返回 null、
+  非电量文本不动、越界钳到 0–100。
+- 与上一节一致：只在展示层改文本，不碰 `IDevice`、不改宿主数据源。

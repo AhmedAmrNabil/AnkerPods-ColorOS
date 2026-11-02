@@ -377,3 +377,43 @@ HUAWEI FreeClip
 截图：`.local/recon/verify3-09-popup-b.png`。这条路径走的是
 `IOplusRemoteDevice.notifyBatteryLevelChanged` 的数组，和 9.6 的蓝牙设置行同源，
 所以"设置页缺盒子"能确定是列表行模板问题，不是数据问题。
+### 9.9 常驻通知（流体云）三段电量 + 设置页开关实况
+
+**通知栏实证**：`.local/recon/verify5-22-low-battery.png`
+
+```
+HUAWEI FreeClip                    🔵
+L 97% R 98% 耳机盒 100%
+低时延已关闭
+[ 开启低时延 ]
+```
+
+这条是 `HuaweiPodsLiveAlert`（渠道名“耳机流体云”，importance 3，`PROMOTED_ONGOING`），
+三段电量与动作按钮都在，`L 97% R 98%` 是当时的真实读数。
+
+**设置页**（App → 关于 → 右上齿轮 → 设置）里这一项的正式名字是
+**「设备空间三段电量（实验）」**，默认关闭；打开后写入 DTO 供详情页与快捷卡片读取，
+和本文档多处用到的 `Settings.Global/huaweipods_multi_battery` 非零覆盖是两条入口：
+前者是用户开关，后者是调试用的一次性覆盖。
+
+**低电提醒预览未取证**：入口已确认（设置 → 耳机低电量提醒 → 发送测试提醒），
+本次点击后 `dumpsys notification` 里没有 `HuaweiPodsLowBattery` 记录、模块日志也没有
+`Low battery reminder posted`，判断是点击没落在可点区域（Compose 行 + 盲点）。
+下次验证要点：点该行**左侧文字区中部**，然后 3 秒内下拉通知栏；
+预期标题 `HUAWEI FreeClip 电量低`、正文 `测试提醒 · 当前电量：左耳 …  右耳 …`、
+tag `HuaweiPodsLowBattery<MAC>`、id `10005`、60 秒后自动消失。
+
+### 9.10 新发现的待适配面：蓝牙「设备详细信息」页
+
+`com.android.settings/.Settings$BluetoothDeviceDetailActivity`（从模块耳机页右上齿轮进入）显示：
+
+```
+HUAWEI FreeClip
+已开启。电量：98%。
+```
+
+单值，来自 `ColorOsSystemBatteryBridge` 写入的 Android 标准电量（取在线耳机较低侧）。
+这一页不归 `com.oplus.wirelesssettings` 管，是 AOSP Settings 的 Activity，
+要补三段需要在 `com.android.settings` 作用域里做同样的文本层改写（现有
+`ColorOsSettingsBatteryText.rewrite` 认的是 `左/右/盒` 标记，这一页是纯数字，需要扩展识别规则）。
+列入下一轮候选，未改动代码。

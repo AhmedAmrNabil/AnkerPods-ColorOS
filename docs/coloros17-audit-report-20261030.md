@@ -668,3 +668,102 @@ adb shell "su -c 'am start -n com.heytap.mydevices/com.oplus.mydevices.deviceui.
 ```bash
 adb shell settings put global huaweipods_multi_battery 0
 ```
+### 9.21 控制中心设备卡：数据在 mydevices，卡只有一个电量槽位
+
+这一节把 §9.19 留的尾巴（`SeedlingUIData` 字段映射）查到了底，结论和最初的猜测不同。
+
+#### 9.21.1 SystemUI 探针：先证明能在 SystemUI 进程里跑
+
+`com.android.systemui` 已进 `scope.list`，`HookEntry` 新增分支后，平板日志立刻有回显：
+
+```
+[ 2026-11-02T17:54:09.988  10160: 15782 I/LSPosedFramework ]
+  (com.android.systemui)[io.github.artifical0.huaweipods.coloros,HuaweiPods-SystemUi,3da6-...,0,1]
+  probe text="1.25 W | 31.3℃ | 88%"
+  view=com.android.systemui.statusbar.notification.row.PrecomputedImageFloatingTextView
+  chain=PrecomputedImageFloatingTextView <- NotificationOptimizedLinearLayout <- FrameLayout
+  id=text
+```
+
+探针第一版按原文去重，结果被充电通知刷爆（功率每秒变一次，每条都算「新文本」）；已改成**按数字归一化后的形状去重**（`\d+` → `#`），并跳过 `℃` / `W |` 这类仪表文本。
+
+#### 9.21.2 三个 APK 拆完：卡片的根不在 SystemUI
+
+| 宿主 | 实测事实 |
+| --- | --- |
+| `SystemUI.apk`（平板件 98 813 860 B，9 dex） | 只有 `qs/tiles/OplusBluetoothTile$ColorBluetoothDetailAdapter`；长按蓝牙磁贴的真实面板里只有设备名，**一个电量文本都没有** |
+| `SystemUIPlugin.apk`（9 114 287 B） | 6303 个类描述符里 0 个蓝牙卡片类，`蓝牙` / `电量` / `耳机盒` 字面量也 0 命中 |
+| `com.heytap.mydevices`（46 076 649 B，6 dex） | `core/seedling/SeedlingCardHelper`、`DeviceSeedlingCardWidgetProvider`、`domain/entities/cards/SeedlingCardData` |
+
+`SystemUI.apk` 的 `resources.arsc` 里唯一一次 `耳机盒` 命中的上下文是「例如开盖或长按耳机盒上的按钮」——那是配对引导文案，不是卡片模板。也就是说卡片 UI 是 seedling 通用壳，**数据由 mydevices 造**。
+
+#### 9.21.3 `SeedlingCardData` 的 20 个字段（dexdump 原文）
+
+把 `MyDevices.apk` 的 `classes4.dex` 单独抽出来，用设备上的 `dexdump` 列类结构：
+
+```
+Class descriptor  : 'Lcom/oplus/mydevices/domain/entities/cards/SeedlingCardData;'
+Access flags      : 0x0011 (PUBLIC FINAL)
+Instance fields   -
+  backgroundColor         String
+  batteryProgress         I        <- 唯一电量槽位
+  buttonText              String
+  buttonTextColor         String
+  capsuleInfoPrimaryText  String   <- 卡片小字
+  capsuleType             String
+  deviceId                String
+  icon                    String
+  isCardShowBattery       Z
+  isLowPower              Z
+  isReConnectable         Z
+  isShowBattery           Z
+  isShowButton            Z
+  lightColor              String
+  lightPosition           String
+  primaryInfo             String   <- 设备名
+  progressBgColor         String
+  progressColor           String
+  secondaryInfo           String   <- 副标题
+  themeColor              String
+```
+
+关键结论：**卡片天生只有一个电量槽位**（`batteryProgress: Int`），所以宿主显示一个数字不是 bug，是数据模型没给三段。要显示三段只能改文本字段（`primaryInfo` / `secondaryInfo` / `capsuleInfoPrimaryText`），而不是去找某个不存在的三格容器。
+
+#### 9.21.4 实现：构造函数执行前改文本参数
+
+`HookContext` 之前只有 `hookConstructorAfter`，改参数必须 before，因此补了一个：
+
+```kotlin
+fun hookConstructorBefore(constructor: Constructor<*>, block: HookParam.() -> Unit) {
+    owner.installHook(constructor, hookIds.next("constructor-before", constructor)) { chain ->
+        if (closed.get()) {
+            chain.proceed()
+        } else {
+            val param = HookParam(chain, null).apply(block)
+            if (param.hasResult) param.result else chain.proceed()
+        }
+    }
+}
+```
+
+新增 `ColorOsSeedlingCardBatteryHook`：在 `SeedlingCardData` 的每个构造函数前扫所有 String 参数，凡是电量形状的用模块三段重写，并按「数字归一化形状」去重打一条 `card text="…" -> "…"` 便于核对；不足两段时返回 null，宿主保持原样。
+
+改写规则抽到 `ColorOsSeedlingCardText.kt`（纯函数，可单测），三条路径逐级兜底：
+
+1. `使用中，电量：左 100%，右 100%` → 补上耳机盒，交 `ColorOsSettingsBatteryText.rewrite`；
+2. `已连接。电量：100%。` → 走 `rewriteSingleValue`，前缀门禁保证手机自己的 `电量：85%` 不被误伤；
+3. `100%` → 裸值展开成 `左 100%，右 100%，盒 88%`（与宿主自己的写法一致，不另造风格）。
+
+新增 `ColorOsSeedlingCardTextTest`，11 个用例锁住上面三条路径和「不该动」的四种情况，测试总数 700 → **711**。
+
+#### 9.21.5 部署状态
+
+`BUILD SUCCESSFUL`（release，sha256 `076d3418c275ad0f945226e42303746b3868c654b9b724bda6144c070812412a`），711 测试 0 失败，Lint 0 error。
+
+**未上机验证**：平板 USB 断开、手机隧道 offline。装上后要看的第一行日志是
+
+```bash
+grep -a 'HuaweiPods-SeedlingCard' /data/adb/lspd/log/modules_*.log | tail
+```
+
+拿到真实文本（是 `100%` 还是 `电量：100%`）再决定要不要把 `capsuleInfoPrimaryText` 也纳入改写。

@@ -58,6 +58,8 @@ open class HookEntry : XposedModule() {
                 "com.heytap.mydevices" -> {
                     loadHook("coloros-mydevices", ColorOsMyDevicesHook, classLoader, packageName)
                     loadHook("coloros-device-space-images", ColorOsDeviceSpaceHook, classLoader, packageName)
+                    // seedling 卡片（控制中心里的设备卡片条）的数据模型在这里构建，卡片只有一个电量槽位。
+                    loadHook("coloros-seedling-card", ColorOsSeedlingCardBatteryHook, classLoader, packageName)
                 }
                 "com.heytap.accessory" ->
                     loadHook("coloros-accessory", ColorOsAccessoryFrameworkHook, classLoader, packageName)
@@ -66,6 +68,9 @@ open class HookEntry : XposedModule() {
                     loadHook("android-settings-device-detail", ColorOsDeviceDetailBatteryHook, classLoader, packageName)
                 "com.oplus.wirelesssettings" ->
                     loadHook("coloros-wirelesssettings", ColorOsWirelessSettingsHook, classLoader, packageName)
+                "com.android.systemui" ->
+                    // 控制中心/通知栏的蓝牙卡片是 seedling 数据驱动，先挂探针摸清是谁在写电量文本。
+                    loadHook("coloros-systemui", ColorOsSystemUiBatteryHook, classLoader, packageName)
             }
         } finally {
             strictInstall.set(previousStrict)
@@ -98,6 +103,7 @@ open class HookEntry : XposedModule() {
             packageName == "com.heytap.accessory" ||
             packageName == "com.oplus.wirelesssettings" ||
             packageName == "com.android.settings" ||
+            packageName == "com.android.systemui" ||
             BuildVariantHooks.supportsPackage(packageName)
 
     internal fun loadHook(

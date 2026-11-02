@@ -186,6 +186,20 @@ abstract class HookContext {
         }
     }
 
+    /**
+     * 构造函数执行前拦截。需要改参数（例如把宿主硬编码的摘要文本换成三段电量）时用它，
+     * 拦截器里调用 [HookParam.proceedWithArgs] 即可。
+     */
+    fun hookConstructorBefore(constructor: Constructor<*>, block: HookParam.() -> Unit) {
+        owner.installHook(constructor, hookIds.next("constructor-before", constructor)) { chain ->
+            if (closed.get()) {
+                chain.proceed()
+            } else {
+                val param = HookParam(chain, null).apply(block)
+                if (param.hasResult) param.result else chain.proceed()
+            }
+        }
+    }
     fun hookConstructorAfter(constructor: Constructor<*>, block: HookParam.() -> Unit) {
         owner.installHook(constructor, hookIds.next("constructor-after", constructor)) { chain ->
             chain.proceed().also {

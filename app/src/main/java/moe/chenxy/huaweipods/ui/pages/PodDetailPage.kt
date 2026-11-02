@@ -81,6 +81,7 @@ import moe.chenxy.huaweipods.pods.supportsAncDirectionDial
 import moe.chenxy.huaweipods.pods.supportsDiscreteAncLevels
 import moe.chenxy.huaweipods.pods.supportsGestureConfiguration
 import moe.chenxy.huaweipods.pods.supportsLowLatencyControl
+import moe.chenxy.huaweipods.pods.supportsSoundcoreAnc
 import moe.chenxy.huaweipods.pods.supportsTransparency
 import moe.chenxy.huaweipods.pods.supportsWindNoiseReduction
 import kotlinx.coroutines.Dispatchers
@@ -122,6 +123,7 @@ fun PodDetailPage(
     val ancLevelChange = onHuaweiAncLevelChange.takeIf {
         deviceRoute.supportsAncDirectionDial ||
             deviceRoute.supportsDiscreteAncLevels ||
+            deviceRoute.supportsSoundcoreAnc ||
             deviceRoute.supportsTransparency
     }
     var leftGestureAction by remember(connectedDeviceAddress) {

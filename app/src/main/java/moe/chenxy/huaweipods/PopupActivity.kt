@@ -53,6 +53,7 @@ import moe.chenxy.huaweipods.pods.supportsAncStateReadback
 import moe.chenxy.huaweipods.pods.supportsAncSubMode
 import moe.chenxy.huaweipods.pods.supportsDiscreteAncLevels
 import moe.chenxy.huaweipods.pods.supportsLowLatencyControl
+import moe.chenxy.huaweipods.pods.supportsSoundcoreAnc
 import moe.chenxy.huaweipods.pods.supportsTransparency
 import moe.chenxy.huaweipods.config.ConfigManager
 import moe.chenxy.huaweipods.config.DeviceRoutePrefs
@@ -263,7 +264,7 @@ private fun PopupContent(
                         val level = intent.getIntExtra("level", ancLevel.value)
                         when {
                             target.route.supportsAncDirectionDial -> ancLevel.value = level.coerceIn(0, 8)
-                            target.route.supportsDiscreteAncLevels && target.route.supportsAncSubMode(level) -> {
+                            (target.route.supportsDiscreteAncLevels || target.route.supportsSoundcoreAnc) && target.route.supportsAncSubMode(level) -> {
                                 ancLevel.value = level
                                 hasAncLevel.value = true
                             }
@@ -373,12 +374,12 @@ private fun PopupContent(
         Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
             putPopupTarget(target)
             putExtra("status", targetMode.broadcastStatus)
-            if (route.supportsDiscreteAncLevels || targetMode == NoiseControlMode.TRANSPARENCY && route.supportsTransparency) {
+            if (route.supportsDiscreteAncLevels || route.supportsSoundcoreAnc || targetMode == NoiseControlMode.TRANSPARENCY && route.supportsTransparency) {
                 val subMode = when (targetMode) {
                     NoiseControlMode.NOISE_CANCELLATION ->
                         ancLevel.value.takeIf {
                             hasAncLevel.value && route.supportsAncSubMode(it)
-                        }
+                        } ?: (if (route.supportsSoundcoreAnc) 3 else null)
                     NoiseControlMode.TRANSPARENCY -> {
                         transparencySubMode.value
                             .takeIf { it in popupTransparencySubModes(route) }
@@ -399,7 +400,7 @@ private fun PopupContent(
         if (!route.supportsAnc) return
         val safeLevel = when {
             route.supportsAncDirectionDial -> level.coerceIn(0, 8)
-            route.supportsDiscreteAncLevels && ancMode.value == NoiseControlMode.NOISE_CANCELLATION ->
+            (route.supportsDiscreteAncLevels || route.supportsSoundcoreAnc) && ancMode.value == NoiseControlMode.NOISE_CANCELLATION ->
                 level.takeIf(route::supportsAncSubMode) ?: return
             route.supportsTransparency && ancMode.value == NoiseControlMode.TRANSPARENCY ->
                 level.takeIf { it in popupTransparencySubModes(route) } ?: return

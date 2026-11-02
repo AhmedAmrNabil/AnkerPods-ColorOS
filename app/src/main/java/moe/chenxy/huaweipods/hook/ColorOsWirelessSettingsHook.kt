@@ -14,6 +14,7 @@ import android.widget.TextView
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import moe.chenxy.huaweipods.BuildConfig
+import moe.chenxy.huaweipods.backend.soundcore.SoundcoreDeviceIdentifier
 import moe.chenxy.huaweipods.broadcast.HuaweiPodsBroadcastTrustPolicy
 import moe.chenxy.huaweipods.pods.huaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.isSupported
@@ -46,6 +47,9 @@ object ColorOsWirelessSettingsHook : HookContext() {
     private const val HFP_AT_VENDOR_PROPERTY = "persist.bluetooth.3rd_earbuds_hfp_at_vendor"
     private const val MY_DEVICES_DETAIL_PANEL_ACTION = "com.oplus.mydevices.ACTION_DEVICE_DETAILED_PANEL"
     private const val AIRPODS_SETTING_ACTION = "com.oplus.mydevices.AIRPODS_SETTING"
+    private const val MELODY_DISPLAY_EARPHONE_OPLUS = "oplus.intent.action.MELODY_DISPLAY_EARPHONE"
+    private const val MELODY_DISPLAY_EARPHONE_HEYTAP = "com.oplus.melody.action.DISPLAY_EARPHONE"
+    private const val DEVICE_DETAILED_PANEL_SETTINGS = "android.settings.DEVICE_DETAILED_PANEL"
     private const val BLUETOOTH_PACKAGE = "com.android.bluetooth"
 
     private var statusReceiverContext: Context? = null
@@ -121,6 +125,53 @@ object ColorOsWirelessSettingsHook : HookContext() {
                 result = true
             }
         }
+
+        runCatching {
+            val totalSupportMethod = findMethod(CACHED_BLUETOOTH_DEVICE, "isTotallySupportAirPods", Context::class.java)
+            hookAfter(totalSupportMethod) {
+                val cachedDevice = instance ?: return@hookAfter
+                val device = runCatching {
+                    callMethod(cachedDevice, "getDevice") as? BluetoothDevice
+                        ?: getObjectField(cachedDevice, "mDevice") as? BluetoothDevice
+                }.getOrNull() ?: return@hookAfter
+                if (isSupportedDevice(device)) {
+                    result = true
+                }
+            }
+        }
+
+        runCatching {
+            val featureHMethod = findMethod("com.oplus.wirelesssettings.k", "H")
+            hookAfter(featureHMethod) {
+                result = true
+            }
+        }
+
+        runCatching {
+            val iotKMethod = findMethod("p024e3.AbstractC0431t", "k", String::class.java)
+            hookAfter(iotKMethod) {
+                val name = args.firstOrNull() as? String ?: return@hookAfter
+                if (SoundcoreDeviceIdentifier.isLiberty4Nc(name) || name.contains("soundcore", ignoreCase = true)) {
+                    result = true
+                }
+            }
+        }
+
+        runCatching {
+            val cls = findClass(CACHED_BLUETOOTH_DEVICE)
+            for (m in cls.declaredMethods.filter { it.name == "refreshInfo" }) {
+                hookAfter(m) {
+                    val cachedDevice = instance ?: return@hookAfter
+                    val device = runCatching {
+                        callMethod(cachedDevice, "getDevice") as? BluetoothDevice
+                            ?: getObjectField(cachedDevice, "mDevice") as? BluetoothDevice
+                    }.getOrNull() ?: return@hookAfter
+                    if (isSupportedDevice(device)) {
+                        runCatching { setObjectField(cachedDevice, "mIsAirPods", true) }
+                    }
+                }
+            }
+        }
     }
 
     private fun hookBatteryInfoReflection() {
@@ -136,6 +187,34 @@ object ColorOsWirelessSettingsHook : HookContext() {
         }
     }
 
+    private fun formatSummary(cachedDevice: Any, addr: String): String? {
+        val summary = latestSummaries[addr]
+            ?: latestBatteryArrays[addr]?.let { arr ->
+                val chinese = Locale.getDefault().language == Locale.CHINESE.language
+                colorOsBatterySummary(
+                    leftBattery = arr[0],
+                    leftConnected = arr[0] >= 0,
+                    rightBattery = arr[1],
+                    rightConnected = arr[1] >= 0,
+                    caseBattery = arr[2],
+                    caseConnected = arr[2] >= 0,
+                    chinese = chinese,
+                )
+            }
+            ?: return null
+        val isActive = runCatching {
+            callMethod(cachedDevice, "isActiveMediaDevice") as? Boolean == true ||
+                callMethod(cachedDevice, "isActiveDeviceA2dp") as? Boolean == true ||
+                callMethod(cachedDevice, "isActiveDeviceHeadset") as? Boolean == true
+        }.getOrDefault(false)
+        val chinese = Locale.getDefault().language == Locale.CHINESE.language
+        return if (isActive) {
+            if (chinese) "使用中，电量：$summary" else "In use. Battery: $summary"
+        } else {
+            if (chinese) "已连接，电量：$summary" else "Connected. Battery: $summary"
+        }
+    }
+
     private fun hookConnectionSummary() {
         val cls = findClass(CACHED_BLUETOOTH_DEVICE)
         val methods = cls.declaredMethods.filter { it.name == "getConnectionSummary" }
@@ -147,9 +226,24 @@ object ColorOsWirelessSettingsHook : HookContext() {
                         ?: getObjectField(cachedDevice, "mDevice") as? BluetoothDevice
                 }.getOrNull() ?: return@hookAfter
                 if (!isSupportedDevice(device)) return@hookAfter
-                val summary = latestSummaries[device.address.uppercase()] ?: return@hookAfter
-                val chinese = Locale.getDefault().language == Locale.CHINESE.language
-                result = if (chinese) "已连接，电量：$summary" else "Connected. Battery: $summary"
+                val addr = device.address.uppercase()
+                formatSummary(cachedDevice, addr)?.let { result = it }
+            }
+        }
+
+        runCatching {
+            val baseCls = findClass("com.oplus.settingslib.bluetooth.b")
+            for (m in baseCls.declaredMethods.filter { it.name in setOf("getOplusTwsSummary", "getSummaryForOplus") }) {
+                hookAfter(m) {
+                    val cachedDevice = instance ?: return@hookAfter
+                    val device = runCatching {
+                        callMethod(cachedDevice, "getDevice") as? BluetoothDevice
+                            ?: getObjectField(cachedDevice, "mDevice") as? BluetoothDevice
+                    }.getOrNull() ?: return@hookAfter
+                    if (!isSupportedDevice(device)) return@hookAfter
+                    val addr = device.address.uppercase()
+                    formatSummary(cachedDevice, addr)?.let { result = it }
+                }
             }
         }
     }
@@ -222,10 +316,19 @@ object ColorOsWirelessSettingsHook : HookContext() {
             Int::class.javaPrimitiveType,
             Bundle::class.java,
         )
+        val validActions = setOf(
+            MY_DEVICES_DETAIL_PANEL_ACTION,
+            AIRPODS_SETTING_ACTION,
+            MELODY_DISPLAY_EARPHONE_OPLUS,
+            MELODY_DISPLAY_EARPHONE_HEYTAP,
+            DEVICE_DETAILED_PANEL_SETTINGS,
+        )
         hookBefore(method) {
             val intent = args.getOrNull(0) as? Intent ?: return@hookBefore
-            if (intent.action != MY_DEVICES_DETAIL_PANEL_ACTION && intent.action != AIRPODS_SETTING_ACTION) return@hookBefore
+            val action = intent.action
+            if (action !in validActions) return@hookBefore
             val address = intent.getStringExtra("device_mac_info")
+                ?: (intent.getParcelableExtra<BluetoothDevice>("device"))?.address
                 ?: intent.getStringExtra("device_address")
                 ?: return@hookBefore
             val device = runCatching { BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(address) }
@@ -251,7 +354,7 @@ object ColorOsWirelessSettingsHook : HookContext() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 val received = intent ?: return
-                if (!HuaweiPodsBroadcastTrustPolicy.isTrustedBluetoothStateSender(sentFromPackage)) {
+                if (!HuaweiPodsBroadcastTrustPolicy.shouldAcceptWirelessSettingsStateBroadcast(received.action, sentFromPackage)) {
                     Log.w(TAG, "Rejected wireless settings state action=${received.action} sender=$sentFromPackage")
                     return
                 }
@@ -320,6 +423,14 @@ object ColorOsWirelessSettingsHook : HookContext() {
     private fun requestCurrentStatus(context: Context) {
         runCatching {
             context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
+                setPackage(BuildConfig.APPLICATION_ID)
+                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+            })
+        }.onFailure {
+            Log.w(TAG, "Unable to request current headset status from app", it)
+        }
+        runCatching {
+            context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {
                 setPackage(BLUETOOTH_PACKAGE)
                 addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
             })
@@ -329,7 +440,14 @@ object ColorOsWirelessSettingsHook : HookContext() {
     }
 
     internal fun isSupportedDevice(device: BluetoothDevice): Boolean {
-        if (device.address.uppercase() in knownSupportedAddresses) return true
-        return runCatching { device.huaweiDeviceRoute().isSupported }.getOrDefault(false)
+        val addr = device.address?.uppercase() ?: return false
+        if (addr in knownSupportedAddresses) return true
+        if (SoundcoreDeviceIdentifier.isSoundcoreDevice(device)) {
+            knownSupportedAddresses.add(addr)
+            return true
+        }
+        val isSupported = runCatching { device.huaweiDeviceRoute().isSupported }.getOrDefault(false)
+        if (isSupported) knownSupportedAddresses.add(addr)
+        return isSupported
     }
 }

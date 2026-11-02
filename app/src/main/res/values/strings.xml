@@ -118,6 +118,10 @@
     <string name="noise_control_title">Noise control</string>
     <string name="transparency_mode">Awareness</string>
     <string name="anc_level_title">Noise cancellation level</string>
+    <string name="soundcore_anc_mode_manual">Manual</string>
+    <string name="soundcore_anc_mode_adaptive">Adaptive</string>
+    <string name="soundcore_anc_adaptive_level">Adaptive level</string>
+    <string name="soundcore_anc_level">Level %1$d</string>
     <string name="anc_level_adaptive">Adaptive</string>
     <string name="anc_level_light">Light</string>
     <string name="anc_level_balanced">Balanced</string>

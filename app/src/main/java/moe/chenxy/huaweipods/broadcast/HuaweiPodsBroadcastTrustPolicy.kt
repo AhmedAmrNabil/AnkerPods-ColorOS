@@ -33,6 +33,7 @@ object HuaweiPodsBroadcastTrustPolicy {
     const val PACKAGE_SMART_AUDIO = "com.huawei.smartaudio"
     const val PACKAGE_HEYTAP_ACCESSORY = "com.heytap.accessory"
     const val PACKAGE_HEYTAP_MYDEVICES = "com.heytap.mydevices"
+    const val PACKAGE_WIRELESS_SETTINGS = "com.oplus.wirelesssettings"
 
     /** 受信任的控制广播发送方（包括应用自身及被 Hook 的 ColorOS 系统组件） */
     private val trustedAppControlSenders = setOf(
@@ -40,6 +41,7 @@ object HuaweiPodsBroadcastTrustPolicy {
         PACKAGE_BLUETOOTH,
         PACKAGE_HEYTAP_ACCESSORY,
         PACKAGE_HEYTAP_MYDEVICES,
+        PACKAGE_WIRELESS_SETTINGS,
     )
 
     /** 受信任的蓝牙底层状态广播发送方（由系统蓝牙进程发往各 UI 与宿主） */
@@ -71,6 +73,11 @@ object HuaweiPodsBroadcastTrustPolicy {
     fun shouldAcceptMyDevicesStateBroadcast(action: String?, senderPackage: String?): Boolean =
         HuaweiPodsAction.canonical(action) in myDevicesStateActions &&
             isTrustedBluetoothStateSender(senderPackage)
+
+    /** 蓝牙设置消费蓝牙进程或应用后端广播的耳机状态。 */
+    fun shouldAcceptWirelessSettingsStateBroadcast(action: String?, senderPackage: String?): Boolean =
+        HuaweiPodsAction.canonical(action) in myDevicesStateActions &&
+            (senderPackage == PACKAGE_BLUETOOTH || senderPackage == PACKAGE_APP)
 
     /** 判断是否为合法的智慧音频发送者 */
     fun isTrustedSmartAudioSender(packageName: String?): Boolean =

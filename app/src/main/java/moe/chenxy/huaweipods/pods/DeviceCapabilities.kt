@@ -36,6 +36,7 @@ data class HuaweiDeviceCapabilities(
     val supportsGestureConfiguration: Boolean = false,
     val supportsLowLatencyControl: Boolean = false,
     val supportsWindNoiseReduction: Boolean = false,
+    val supportsSoundcoreAnc: Boolean = false,
     val hasChargingCase: Boolean = false,
     val usesReportedEarbudAvailability: Boolean = false,
 )
@@ -225,7 +226,8 @@ private val routeCapabilities = linkedMapOf(
         supportsAnc = true,
         supportsTransparency = true,
         supportsAncStateReadback = true,
-        supportsDiscreteAncLevels = true,
+        supportsDiscreteAncLevels = false,
+        supportsSoundcoreAnc = true,
         hasChargingCase = true,
     ),
 )
@@ -303,6 +305,9 @@ val HuaweiDeviceRoute.supportsLowLatencyControl: Boolean
 
 val HuaweiDeviceRoute.supportsWindNoiseReduction: Boolean
     get() = capabilities?.supportsWindNoiseReduction == true
+
+val HuaweiDeviceRoute.supportsSoundcoreAnc: Boolean
+    get() = capabilities?.supportsSoundcoreAnc == true
 
 val HuaweiDeviceRoute.hasChargingCase: Boolean
     get() = capabilities?.hasChargingCase == true

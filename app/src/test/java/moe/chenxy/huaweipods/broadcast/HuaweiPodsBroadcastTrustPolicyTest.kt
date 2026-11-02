@@ -27,6 +27,7 @@ class HuaweiPodsBroadcastTrustPolicyTest {
             HuaweiPodsBroadcastTrustPolicy.PACKAGE_BLUETOOTH,
             HuaweiPodsBroadcastTrustPolicy.PACKAGE_HEYTAP_MYDEVICES,
             HuaweiPodsBroadcastTrustPolicy.PACKAGE_HEYTAP_ACCESSORY,
+            HuaweiPodsBroadcastTrustPolicy.PACKAGE_WIRELESS_SETTINGS,
         )
         trustedSenders.forEach { sender ->
             assertTrue("Sender $sender should be trusted for app control", HuaweiPodsBroadcastTrustPolicy.isTrustedAppControlSender(sender))
@@ -287,6 +288,35 @@ class HuaweiPodsBroadcastTrustPolicyTest {
                 "com.random.sender",
             ),
         )
+    }
+
+    @Test
+    fun `wireless settings accepts battery and ANC broadcasts from bluetooth and app`() {
+        val stateActions = listOf(
+            HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED,
+            HuaweiPodsAction.ACTION_PODS_ANC_CHANGED,
+        )
+        for (action in stateActions) {
+            assertTrue(
+                HuaweiPodsBroadcastTrustPolicy.shouldAcceptWirelessSettingsStateBroadcast(
+                    action,
+                    HuaweiPodsBroadcastTrustPolicy.PACKAGE_BLUETOOTH,
+                ),
+            )
+            assertTrue(
+                HuaweiPodsBroadcastTrustPolicy.shouldAcceptWirelessSettingsStateBroadcast(
+                    action,
+                    HuaweiPodsBroadcastTrustPolicy.PACKAGE_APP,
+                ),
+            )
+            assertFalse(
+                HuaweiPodsBroadcastTrustPolicy.shouldAcceptWirelessSettingsStateBroadcast(
+                    action,
+                    "com.untrusted.sender",
+                ),
+            )
+        }
+    }
     }
 
     @Test

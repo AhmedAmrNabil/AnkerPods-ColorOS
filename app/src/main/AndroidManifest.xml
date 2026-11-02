@@ -134,6 +134,8 @@
                 <action android:name="chen.action.huaweipods.coloros.pods_connected" />
                 <action android:name="chen.action.huaweipods.coloros.pods_disconnected" />
                 <action android:name="chen.action.huaweipods.coloros.pods_battery_changed" />
+                <action android:name="chen.action.huaweipods.coloros.anc_changed" />
+                <action android:name="chen.action.huaweipods.coloros.pods_anc_changed" />
                 <action android:name="chen.action.huaweipods.coloros.pods_anc_select" />
                 <action android:name="chen.action.huaweipods.coloros.anc_select" />
             </intent-filter>

@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.widget.TextView
+import android.util.Pair
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import moe.chenxy.huaweipods.BuildConfig
@@ -83,6 +84,9 @@ object ColorOsWirelessSettingsHook : HookContext() {
         runCatching { hookVendorId() }
             .onSuccess { Log.i(TAG, "Bluetooth settings vendor hook installed") }
             .onFailure { Log.w(TAG, "Bluetooth settings vendor hook unavailable", it) }
+        runCatching { hookEarbudsIcon() }
+            .onSuccess { Log.i(TAG, "Bluetooth settings earbuds icon hook installed") }
+            .onFailure { Log.w(TAG, "Bluetooth settings earbuds icon hook unavailable", it) }
         runCatching { hookEarphoneEntryLaunch() }
             .onFailure { Log.w(TAG, "Bluetooth settings entry hook unavailable", it) }
         runCatching { hookBatterySummary() }
@@ -227,7 +231,10 @@ object ColorOsWirelessSettingsHook : HookContext() {
                 }.getOrNull() ?: return@hookAfter
                 if (!isSupportedDevice(device)) return@hookAfter
                 val addr = device.address.uppercase()
-                formatSummary(cachedDevice, addr)?.let { result = it }
+                val current = result as? String
+                if (current.isNullOrBlank() || (!current.contains("%") && !current.contains("电量"))) {
+                    formatSummary(cachedDevice, addr)?.let { result = it }
+                }
             }
         }
 
@@ -242,7 +249,10 @@ object ColorOsWirelessSettingsHook : HookContext() {
                     }.getOrNull() ?: return@hookAfter
                     if (!isSupportedDevice(device)) return@hookAfter
                     val addr = device.address.uppercase()
-                    formatSummary(cachedDevice, addr)?.let { result = it }
+                    val current = result as? String
+                    if (current.isNullOrBlank() || (!current.contains("%") && !current.contains("电量"))) {
+                        formatSummary(cachedDevice, addr)?.let { result = it }
+                    }
                 }
             }
         }
@@ -296,6 +306,68 @@ object ColorOsWirelessSettingsHook : HookContext() {
             ColorOsBatterySummaryInjector.rewriteForAnyPod(text, rewrite, (instance as? TextView)?.context)
                 ?.let { proceedWithArgs(it) }
         }
+    }
+
+    private fun hookEarbudsIcon() {
+        val utilsCls = runCatching { findClass("com.android.settingslib.bluetooth.BluetoothUtils") }.getOrNull() ?: return
+        val cachedDeviceCls = runCatching { findClass(CACHED_BLUETOOTH_DEVICE) }.getOrNull() ?: return
+
+        runCatching {
+            val getDeviceTypeMethod = utilsCls.getDeclaredMethod("getDeviceType", cachedDeviceCls)
+            hookBefore(getDeviceTypeMethod) {
+                val cachedDevice = args.firstOrNull() ?: return@hookBefore
+                val device = runCatching {
+                    callMethod(cachedDevice, "getDevice") as? BluetoothDevice
+                        ?: getObjectField(cachedDevice, "mDevice") as? BluetoothDevice
+                }.getOrNull() ?: return@hookBefore
+                if (isSupportedDevice(device)) {
+                    result = "oplusEarBuds"
+                }
+            }
+        }.onFailure { Log.w(TAG, "BluetoothUtils.getDeviceType hook unavailable", it) }
+
+        runCatching {
+            val cacheOrUpdateMethod = utilsCls.getDeclaredMethod("cacheOrUpdateDeviceType", cachedDeviceCls)
+            hookBefore(cacheOrUpdateMethod) {
+                val cachedDevice = args.firstOrNull() ?: return@hookBefore
+                val device = runCatching {
+                    callMethod(cachedDevice, "getDevice") as? BluetoothDevice
+                        ?: getObjectField(cachedDevice, "mDevice") as? BluetoothDevice
+                }.getOrNull() ?: return@hookBefore
+                if (isSupportedDevice(device)) {
+                    result = "oplusEarBuds"
+                }
+            }
+        }.onFailure { Log.w(TAG, "BluetoothUtils.cacheOrUpdateDeviceType hook unavailable", it) }
+
+        runCatching {
+            val getIconMethod = utilsCls.getDeclaredMethod(
+                "getIconFromDeviceType",
+                Context::class.java,
+                cachedDeviceCls,
+                Boolean::class.javaPrimitiveType!!,
+            ).apply { isAccessible = true }
+            hookBefore(getIconMethod) {
+                val context = args.firstOrNull() as? Context ?: return@hookBefore
+                val cachedDevice = args.getOrNull(1) ?: return@hookBefore
+                val isDark = args.getOrNull(2) as? Boolean ?: false
+                val device = runCatching {
+                    callMethod(cachedDevice, "getDevice") as? BluetoothDevice
+                        ?: getObjectField(cachedDevice, "mDevice") as? BluetoothDevice
+                }.getOrNull() ?: return@hookBefore
+                if (isSupportedDevice(device)) {
+                    val drawableName = if (isDark) "bt_headset_hfp_ic_dark" else "bt_headset_hfp_ic_light"
+                    val resId = context.resources.getIdentifier(drawableName, "drawable", context.packageName)
+                    if (resId != 0) {
+                        val drawable = context.getDrawable(resId)
+                        if (drawable != null) {
+                            result = Pair(drawable, null)
+                        }
+                    }
+                }
+            }
+        }.onFailure { Log.w(TAG, "BluetoothUtils.getIconFromDeviceType hook unavailable", it) }
+    }
     }
 
     private fun hookVendorId() {

@@ -343,3 +343,8 @@ Bluetooth settings battery summary patched rows=1 triple=ColorOsBatteryTriple(le
 - 单测 `ColorOsSettingsBatteryTextTest`（9 条）：中文/英文模板、缺段丢段、无变化返回 null、
   非电量文本不动、越界钳到 0–100。
 - 与上一节一致：只在展示层改文本，不碰 `IDevice`、不改宿主数据源。
+**深色主题复核**：`.local/recon/verify3-05-dark-overlay.png`。
+深色卡片下 `L100 R100 C100` 用宿主同级文本色，对比度与旁边 `94` 一致；浅色见
+`verify2-22-final.png`。两套主题都不需要单独配色分支。
+
+> 测试完把 `huaweipods_multi_battery` 复位为 `0`（关闭卡片浮层），夜间模式也已还原。

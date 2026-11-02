@@ -641,3 +641,30 @@ dex 里 class 描述符 6303 个，其中 /seedling/ 相关 972 个
 要改卡片内容，钩点应该是 SystemUI 进程里的 seedling 数据模型/`SeedlingCardOptions`，
 而不是找某个 `BlueToothCardView` 类——那东西在这两个包里根本不存在。
 下一步需要把 `com.android.systemui` 加进 scope，再定位 `SeedlingUIData` 的字段映射。
+
+### 9.20 设备空间卡片切 MULTI：`L100 R100 C88` 真机截图
+
+![设备空间 MULTI 卡片](.local/recon/verify6-08-device-space-multi.png)
+
+`settings put global huaweipods_multi_battery 3`（BIT_DTO|BIT_CARD）之后，
+`com.heytap.mydevices` 的 `BlueToothCardView` 从单值切到多格容器，三个数字分开显示：
+
+```
+FreeClip        🔋 L100 R100 C88     ← 我们的卡（MULTI）
+一加 15          🔋 85               ← 宿主自己的卡（SINGLE），没被误伤
+```
+
+同屏对照刚好证明「只改该改的那张卡」：宿主自己的手机卡片走的是单值分支，
+我们的改写没有溢出到别的设备。
+
+打开方式（这个 Activity 需要 `com.oppo.permission.safe.IOT`，普通 shell 起不来，必须 su）：
+
+```bash
+adb shell "su -c 'am start -n com.heytap.mydevices/com.oplus.mydevices.deviceui.devicecard.DeviceCardHomeActivity'"
+```
+
+验证完记得把开关交还给 App 设置：
+
+```bash
+adb shell settings put global huaweipods_multi_battery 0
+```

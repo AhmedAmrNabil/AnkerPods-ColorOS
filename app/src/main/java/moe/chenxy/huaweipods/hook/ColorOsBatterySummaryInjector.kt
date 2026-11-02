@@ -80,11 +80,20 @@ internal object ColorOsBatterySummaryInjector {
      * `TextView.setText` 钩子需要它：宿主每次重新绑定文本都要重新算一遍，
      * 不能只依赖广播到达那一刻的窗口扫描。
      */
-    fun currentTriple(): ColorOsBatteryTriple? {
+    fun currentTriple(): ColorOsBatteryTriple? = colorOsBatteryTriple(currentPod())
+
+    /**
+     * 当前用于卡片的那条耳机记录。
+     *
+     * 与 [currentTriple] 同一条选择策略（段数最多者），但保留地址和名字——seedling 卡片要按
+     * `md5(大写 MAC)` / 设备名先把「这张卡是不是我们的耳机」判掉，否则会把别的设备的电量也换成我们的数字。
+     */
+    fun currentPod(): ColorOsPodBattery? {
         appContext?.let { context -> ColorOsBatterySnapshot.restoreInto(context) }
         return ColorOsPodBatteryStore.snapshot()
-            .mapNotNull(::colorOsBatteryTriple)
-            .maxByOrNull { it.parts.size }
+            .mapNotNull { pod -> colorOsBatteryTriple(pod)?.let { pod to it } }
+            .maxByOrNull { (_, triple) -> triple.parts.size }
+            ?.first
     }
     /** 立刻扫一遍窗口。 */
     fun patch(tag: String, rewrite: Rewrite, enabled: () -> Boolean = { true }) {

@@ -1,7 +1,9 @@
 package moe.chenxy.huaweipods.hook
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -76,5 +78,46 @@ class ColorOsSeedlingCardTextTest {
     @Test
     fun `over long text is ignored`() {
         assertNull(rewriteSeedlingCardText("电量：" + "1".repeat(120), full))
+    }
+
+    // ---- 身份门禁：SeedlingCardData 是所有设备共用的模型 ----
+
+    private val pod = ColorOsPodBattery(
+        address = "30:A9:98:CB:C4:54",
+        left = 100,
+        leftConnected = true,
+        right = 100,
+        rightConnected = true,
+        case = 88,
+        caseConnected = true,
+        name = "HUAWEI FreeClip",
+    )
+
+    @Test
+    fun `card matches by md5 device id`() {
+        val values = listOf("f68a5d82181e48edd39eb1824f43c1fa", "FreeClip", "已连接")
+        assertTrue(seedlingCardMentionsPod(values, pod))
+    }
+
+    @Test
+    fun `card matches by device name`() {
+        assertTrue(seedlingCardMentionsPod(listOf("HUAWEI FreeClip", "100%"), pod))
+    }
+
+    @Test
+    fun `other device card is rejected`() {
+        val values = listOf("一加 15", "85%", "9f2c1b0a7d3e4f5a6b7c8d9e0f1a2b3c")
+        assertFalse(seedlingCardMentionsPod(values, pod))
+    }
+
+    @Test
+    fun `missing pod or empty values are rejected`() {
+        assertFalse(seedlingCardMentionsPod(listOf("HUAWEI FreeClip"), null))
+        assertFalse(seedlingCardMentionsPod(emptyList(), pod))
+    }
+
+    @Test
+    fun `short fragments do not match by name`() {
+        assertFalse(seedlingCardMentionsPod(listOf("Fre"), pod))
     }
 }

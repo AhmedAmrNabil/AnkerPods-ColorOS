@@ -24,6 +24,7 @@ internal object ColorOsSeedlingCardBatteryHook : HookContext() {
 
     private val DIGITS = Regex("\\d+")
     private val probed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val skipped = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     override fun onHook() {
         runCatching { hookCardData() }
@@ -38,7 +39,13 @@ internal object ColorOsSeedlingCardBatteryHook : HookContext() {
             constructor.isAccessible = true
             hookConstructorBefore(constructor) {
                 runCatching {
-                    val triple = ColorOsBatterySummaryInjector.currentTriple() ?: return@runCatching
+                    val pod = ColorOsBatterySummaryInjector.currentPod() ?: return@runCatching
+                    val triple = colorOsBatteryTriple(pod) ?: return@runCatching
+                    // 先判身份：这个模型是所有设备共用的，不判就会把别人的卡片也改掉。
+                    if (!seedlingCardMentionsPod(args.filterIsInstance<String>(), pod)) {
+                        logSkipped(args)
+                        return@runCatching
+                    }
                     val newArgs = args.toMutableList()
                     var changed = false
                     for (index in newArgs.indices) {
@@ -57,6 +64,19 @@ internal object ColorOsSeedlingCardBatteryHook : HookContext() {
                     if (changed) proceedWithArgs(*newArgs.toTypedArray())
                 }
             }
+        }
+    }
+
+    /**
+     * 不是我们的卡片时留一条（按形状去重）。
+     *
+     * 这条日志的价值在于区分「钩子没跑」和「跑了但判掉别人的卡」——后者才是期望行为。
+     */
+    private fun logSkipped(args: List<Any?>) {
+        val sample = args.filterIsInstance<String>().firstOrNull { it.isNotEmpty() } ?: return
+        if (skipped.size >= MAX_PROBES) return
+        if (skipped.add(DIGITS.replace(sample, "#"))) {
+            Log.i(TAG, "skip card text=\"$sample\" (not our pod)")
         }
     }
 }

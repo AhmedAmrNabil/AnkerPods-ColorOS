@@ -767,3 +767,32 @@ grep -a 'HuaweiPods-SeedlingCard' /data/adb/lspd/log/modules_*.log | tail
 ```
 
 拿到真实文本（是 `100%` 还是 `电量：100%`）再决定要不要把 `capsuleInfoPrimaryText` 也纳入改写。
+#### 9.21.6 身份门禁：`SeedlingCardData` 是所有设备共用的
+
+第一版实现直接在构造前改所有电量文本，这在真机上会出事：`SeedlingCardData` 不只服务耳机，
+手机 / 手表 / 平板卡片用的是同一个模型，拿模块的三段数据无脑重写，会把别人的 `85%` 也换成
+`左 100%，右 100%，盒 88%`。
+
+所以加了身份判断 `seedlingCardMentionsPod(values, pod)`，两条命中任一条才算自己的卡：
+
+| 条件 | 依据 |
+| --- | --- |
+| 某个字符串参数满足 `deviceId == md5(大写 MAC)` | 宿主拿 `md5(大写 MAC)` 当设备 id（`ColorOsHomeCardBattery.deviceIdFor`，真机 `30:A9:98:CB:C4:54` → `f68a5d82181e48edd39eb1824f43c1fa`） |
+| 某个字符串参数与 `device_name` 互相包含且长度 ≥ 4 | 卡片上没有地址时靠名字兜底；长度下限避开 `Fre` 这种片段误命中 |
+
+同时把「当前是哪条耳机」提到 injector：
+
+```kotlin
+fun currentTriple(): ColorOsBatteryTriple? = colorOsBatteryTriple(currentPod())
+
+fun currentPod(): ColorOsPodBattery? {
+    appContext?.let { context -> ColorOsBatterySnapshot.restoreInto(context) }
+    return ColorOsPodBatteryStore.snapshot()
+        .mapNotNull { pod -> colorOsBatteryTriple(pod)?.let { pod to it } }
+        .maxByOrNull { (_, triple) -> triple.parts.size }
+        ?.first
+}
+```
+
+判掉时打一条 `skip card text="…" (not our pod)`——这条日志用来区分「钩子没跑」和
+「跑了但正确跳过了别人的卡」，后者才是期望行为。新增 5 个门禁用例，测试 711 → **716**。

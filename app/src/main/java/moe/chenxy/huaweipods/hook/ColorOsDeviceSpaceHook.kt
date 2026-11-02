@@ -227,6 +227,9 @@ private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
         if (batteryReceiver != null) return
         // 拿到 Context 就把运行时开关接上：三段电量的两个开关读 Settings.Global，改设置几秒内生效。
         ColorOsBatteryFlags.attach(context)
+        // 冷启动的「我的设备」进程还没有电量广播，先拿蓝牙进程写的快照顶上，
+        // 否则首页卡片浮层要等下一包广播才出现。
+        ColorOsBatterySnapshot.restoreInto(context)
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val address = intent.getStringExtra("address")?.uppercase()

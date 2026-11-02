@@ -503,3 +503,68 @@ shell 直接广播会被信任策略拒掉）。
 我连续重装了几轮 APK，而蓝牙进程还停在旧模块上，这个判断直接返回，**连日志都不打**。
 `am force-stop com.android.bluetooth` 让它重新加载当前模块后，点一次就出来了。
 结论：验证模块侧的通知/弹窗，改完 APK 要重启对应作用域进程，否则看到的是旧代代码。
+### 9.14 改写点从「扫窗口」改成「钩 setText」：蓝牙设置列表行真机三段
+
+![蓝牙设置列表行三段电量](.local/recon/verify6-03-bt-settings-row.png)
+
+```
+使用中，电量：左100%，右100%，盒90%
+```
+
+**这一轮暴露的是架构问题，不是规则问题。** 原来所有宿主都靠「收到电量广播 → 遍历窗口改 TextView」，
+日志显示 `patched=1` 也确实改到了，但界面还是两段。把日志按时间排开就清楚了：
+
+```
+16:02:48 scan roots=1 patched=0   ← 行还没绑定
+16:02:50 scan roots=1 patched=1   ← 我们改成三段
+16:02:52（截图）左100%，右100%     ← 宿主 15 秒一次的重新绑定把它覆盖回去了
+16:03:02 scan roots=1 patched=1   ← 又改成三段
+```
+
+宿主的列表适配器每 15 秒重绑一次摘要文本，谁先谁后完全看时序，所以「扫窗口」这条路天生会翻车。
+
+现在改成在 `TextView.setText(CharSequence)` 那一刻改写：
+
+```kotlin
+val setText = TextView::class.java.getDeclaredMethod("setText", CharSequence::class.java)
+hookBefore(setText) {
+    val text = args[0] as? CharSequence ?: return@hookBefore
+    val triple = ColorOsBatterySummaryInjector.currentTriple() ?: return@hookBefore
+    rewrite.apply(text, triple)?.let { proceedWithArgs(it) }
+}
+```
+
+宿主怎么重绑都没用，它写一次我们改一次，顺序固定在渲染之前。窗口扫描保留作兜底
+（有些文本走 `setText(int)` 或自定义绘制，钩不到）。
+
+注意 `HookParam.args` 是只读 `List`，改参数必须用 `proceedWithArgs(...)`；直接写 `args[0] = x`
+编译不过（`No 'set' operator method providing array access`）。
+
+### 9.15 本轮新增的遗留：设置里的「已连接的设备」列表页
+
+用 `Settings$BluetoothDeviceDetailActivity` 深链实际落到 `com.android.settings.SubSettings`
+的「已连接的设备」页，那一行还是 `已开启。电量：100%。` 单值。没动它是有意的：
+这个页面同时也承载手机自己的设备/电量条目，而单值改写规则（`冒号后只有一个百分比`）
+和手机电量页的文本形状一样，放宽门禁会误伤。要做得先按
+`ConnectedDeviceDashboardFragment` 的适配器定位，而不是按文本形状。
+
+顺带记录本轮验证用的深链命令（比盲点坐标可靠）：
+
+```bash
+adb shell am start -a android.settings.BLUETOOTH_SETTINGS
+adb shell 'am start -n "com.android.settings/com.android.settings.Settings\$BluetoothDeviceDetailActivity" -e device_address 30:A9:98:CB:C4:54'
+```
+
+### 9.16 LSPosed 日志会换文件（排查时最坑的一条）
+
+模块每次重装 APK，LSPosed 会新开一个日志文件：
+
+```
+/data/adb/lspd/log/modules_2026-11-02T09:20:32.495435.log   ← 14:37 之后不再写入
+/data/adb/lspd/log/modules_2026-11-02T14:37:52.463419.log   ← 新的
+```
+
+我一直 grep 旧文件，于是「没有日志」被误判成「hook 没跑」。排查顺序应该是
+`ls -la /data/adb/lspd/log/ | tail` 取最新文件，再看时间戳对不对得上。
+另外 ColorOS 的 `am force-stop com.oplus.wirelesssettings` 不一定真杀（进程会自愈），
+要么 `killall`，要么确认 PID 变了才算重启。

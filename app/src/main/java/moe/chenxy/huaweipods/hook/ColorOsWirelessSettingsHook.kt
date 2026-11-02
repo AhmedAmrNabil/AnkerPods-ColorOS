@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.widget.TextView
 import moe.chenxy.huaweipods.BuildConfig
 import moe.chenxy.huaweipods.pods.huaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.isSupported
@@ -56,6 +57,11 @@ object ColorOsWirelessSettingsHook : HookContext() {
         runCatching { hookBatterySummary() }
             .onSuccess { Log.i(TAG, "Bluetooth settings battery summary hook installed") }
             .onFailure { Log.w(TAG, "Bluetooth settings battery summary unavailable", it) }
+        runCatching { hookBatterySummaryResume() }
+            .onFailure { Log.w(TAG, "Bluetooth settings resume refresh unavailable", it) }
+        runCatching { hookBatterySummarySetText() }
+            .onSuccess { Log.i(TAG, "Bluetooth settings summary setText hook installed") }
+            .onFailure { Log.w(TAG, "Bluetooth settings summary setText hook unavailable", it) }
     }
 
     /**
@@ -76,6 +82,36 @@ object ColorOsWirelessSettingsHook : HookContext() {
         }
     }
 
+    /**
+     * 只等电量广播的话，进页面前没有新广播就一直是宿主的老文本（缺盒子）。
+     * 这里在每次 `onResume` 后补三刷，配合 [ColorOsBatterySnapshot] 的跨进程回填，
+     * 冷启动页面也能立刻显示三段。
+     */
+    private fun hookBatterySummaryResume() {
+        val rewrite = ColorOsBatterySummaryInjector.Rewrite { text, triple ->
+            ColorOsSettingsBatteryText.rewrite(text, triple.left, triple.right, triple.case)
+        }
+        val onResume = Activity::class.java.getDeclaredMethod("onResume")
+        hookAfter(onResume) {
+            val activity = instance as? Activity ?: return@hookAfter
+            ColorOsBatterySummaryInjector.attach(activity, TAG, rewrite)
+        }
+    }
+    /**
+     * 宿主每 15 秒重绑一次列表摘要，扫窗口会和它抢时序（改完立刻被覆盖）。
+     * 在它写文本那一刻改写，顺序就固定了：宿主先算，我们改，TextView 收到的是三段。
+     */
+    private fun hookBatterySummarySetText() {
+        val rewrite = ColorOsBatterySummaryInjector.Rewrite { text, triple ->
+            ColorOsSettingsBatteryText.rewrite(text, triple.left, triple.right, triple.case)
+        }
+        val setText = TextView::class.java.getDeclaredMethod("setText", CharSequence::class.java)
+        hookBefore(setText) {
+            val text = args[0] as? CharSequence ?: return@hookBefore
+            val triple = ColorOsBatterySummaryInjector.currentTriple() ?: return@hookBefore
+            rewrite.apply(text, triple)?.let { proceedWithArgs(it) }
+        }
+    }
     private fun hookVendorId() {
         val method = findMethod(BLUETOOTH_NATIVE, "getDeviceVendorId", BluetoothDevice::class.java)
         hookAfter(method) {

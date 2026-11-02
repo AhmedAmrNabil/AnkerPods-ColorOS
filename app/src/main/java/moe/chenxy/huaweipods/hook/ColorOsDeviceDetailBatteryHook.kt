@@ -2,6 +2,7 @@ package moe.chenxy.huaweipods.hook
 
 import android.app.Activity
 import android.app.Application
+import android.widget.TextView
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -22,8 +23,6 @@ internal object ColorOsDeviceDetailBatteryHook : HookContext() {
     /** 详细信息页在前台的实例数（同一页可能被重建，用计数比布尔更稳）。 */
     private val visible = AtomicInteger(0)
 
-    private val main = android.os.Handler(android.os.Looper.getMainLooper())
-
     private val rewrite = ColorOsBatterySummaryInjector.Rewrite { text, triple ->
         ColorOsSettingsBatteryText.rewriteSingleValue(text, triple)
     }
@@ -34,6 +33,9 @@ internal object ColorOsDeviceDetailBatteryHook : HookContext() {
             .onFailure { Log.w(TAG, "device detail battery hook unavailable", it) }
         runCatching { hookApplicationCreate() }
             .onFailure { Log.w(TAG, "device detail battery receiver unavailable", it) }
+        runCatching { hookSummarySetText() }
+            .onSuccess { Log.i(TAG, "device detail summary setText hook installed") }
+            .onFailure { Log.w(TAG, "device detail summary setText hook unavailable", it) }
     }
 
     private fun hookActivityVisibility() {
@@ -43,10 +45,7 @@ internal object ColorOsDeviceDetailBatteryHook : HookContext() {
             if (!activity.isDetailPage()) return@hookAfter
             visible.incrementAndGet()
             Log.i(TAG, "detail page resumed class=${activity.javaClass.name}")
-            // 宿主的 summary 由 Preference 在 onResume 之后才绑定，扫一次不够，补两刷。
-            main.post { ColorOsBatterySummaryInjector.patch(TAG, rewrite) { visible.get() > 0 } }
-            main.postDelayed({ ColorOsBatterySummaryInjector.patch(TAG, rewrite) { visible.get() > 0 } }, 400)
-            main.postDelayed({ ColorOsBatterySummaryInjector.patch(TAG, rewrite) { visible.get() > 0 } }, 1_200)
+            ColorOsBatterySummaryInjector.attach(activity, TAG, rewrite) { visible.get() > 0 }
         }
         val onPause = Activity::class.java.getDeclaredMethod("onPause")
         hookBefore(onPause) {
@@ -56,6 +55,19 @@ internal object ColorOsDeviceDetailBatteryHook : HookContext() {
         }
     }
 
+    /**
+     * 在宿主动手写文本的那一刻改写，比「扫窗口」可靠：宿主每次重新绑定摘要都会走到这里，
+     * 不存在「我们改完又被覆盖回去」的时序问题。只在详细信息页前台时生效。
+     */
+    private fun hookSummarySetText() {
+        val setText = TextView::class.java.getDeclaredMethod("setText", CharSequence::class.java)
+        hookBefore(setText) {
+            if (visible.get() <= 0) return@hookBefore
+            val text = args[0] as? CharSequence ?: return@hookBefore
+            val triple = ColorOsBatterySummaryInjector.currentTriple() ?: return@hookBefore
+            rewrite.apply(text, triple)?.let { proceedWithArgs(it) }
+        }
+    }
     private fun hookApplicationCreate() {
         val onCreate = Application::class.java.getDeclaredMethod("onCreate")
         hookAfter(onCreate) {

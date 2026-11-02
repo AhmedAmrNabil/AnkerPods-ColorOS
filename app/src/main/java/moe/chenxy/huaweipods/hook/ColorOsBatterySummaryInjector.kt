@@ -12,6 +12,7 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import java.util.concurrent.atomic.AtomicBoolean
 import moe.chenxy.huaweipods.broadcast.HuaweiPodsBroadcastTrustPolicy
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.addHuaweiPodsAction
@@ -24,6 +25,11 @@ import moe.chenxy.huaweipods.utils.miuiStrongToast.data.addHuaweiPodsAction
  * - 蓝牙设备详细信息页 `已开启。电量：98%。`（单值）→ [ColorOsSettingsBatteryText.rewriteSingleValue]
  *
  * 只在展示层改文本：不碰 `IDevice`、不改宿主的数据源，认不出目标文本就一个字符都不动。
+ *
+ * **入口为什么不是 `Application.onCreate`**：模块热重载（重装 APK 后 LSPosed 重新注入）时
+ * `Application.onCreate` 早就跑过了。只在它里面注册接收器，等于新代码永远不生效——真机上表
+ * 现为「hook installed 日志有、页面却没变」。所以入口是幂等的 [attach]，`Application.onCreate`
+ * 与 `Activity.onResume` 都会调用它。
  */
 internal object ColorOsBatterySummaryInjector {
 
@@ -33,62 +39,62 @@ internal object ColorOsBatterySummaryInjector {
     }
 
     private val main = Handler(Looper.getMainLooper())
+    private val receiverRegistered = AtomicBoolean(false)
 
-    /** 供快照回填用的进程级 Context；新进程在这里拿不到广播数据，只能先读上次的快照。 */
+    /** 供快照回填与惰性注册接收器用的进程级 Context。 */
     @Volatile
     private var appContext: Context? = null
 
-    /** 在宿主 `Application.onCreate` 之后调用：注册接收器并补三刷（首屏渲染比 onCreate 晚）。 */
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    /** 幂等入口：绑定 Context、按需注册接收器、立刻补刷三遍。 */
+    fun attach(
+        context: Context,
+        tag: String,
+        rewrite: Rewrite,
+        enabled: () -> Boolean = { true },
+    ) {
+        appContext = context.applicationContext ?: context
+        if (!enabled()) return
+        runCatching { registerReceiverIfNeeded(tag, rewrite, enabled) }
+            .onFailure { Log.w(tag, "battery summary receiver unavailable", it) }
+        schedulePatches(tag, rewrite, enabled)
+    }
+
+    /** 兼容旧调用点：`Application.onCreate` 之后走同一条幂等路径。 */
     fun install(
         app: Application,
         tag: String,
         rewrite: Rewrite,
         enabled: () -> Boolean = { true },
-    ) {
-        runCatching {
-            appContext = app.applicationContext
-            val receiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context, intent: Intent) {
-                    if (!isTrustedSender(context, intent.action, senderUid(), tag)) return
-                    val address = intent.getStringExtra("address")?.uppercase() ?: return
-                    ColorOsPodBatteryStore.put(
-                        ColorOsPodBattery(
-                            address = address,
-                            left = intent.getIntExtra("left_battery", 0),
-                            leftConnected = intent.getBooleanExtra("left_connected", false),
-                            right = intent.getIntExtra("right_battery", 0),
-                            rightConnected = intent.getBooleanExtra("right_connected", false),
-                            case = intent.getIntExtra("case_battery", 0),
-                            caseConnected = intent.getBooleanExtra("case_connected", false),
-                            name = intent.getStringExtra("device_name")?.takeIf(String::isNotBlank),
-                        ),
-                    )
-                    main.post { patch(tag, rewrite, enabled) }
-                }
-            }
-            app.registerReceiver(
-                receiver,
-                IntentFilter().apply { addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED) },
-                Context.RECEIVER_EXPORTED,
-            )
-            main.post { patch(tag, rewrite, enabled) }
-            main.postDelayed({ patch(tag, rewrite, enabled) }, 1_200)
-            main.postDelayed({ patch(tag, rewrite, enabled) }, 3_000)
-            Log.i(tag, "battery summary injector installed")
-        }.onFailure { Log.w(tag, "battery summary injector unavailable", it) }
+    ) = attach(app, tag, rewrite, enabled)
+
+    /** `onResume` 之后按 0/400/1200ms 各扫一次（宿主绑定文本常晚于 `onResume`）。 */
+    fun schedulePatches(tag: String, rewrite: Rewrite, enabled: () -> Boolean = { true }) {
+        main.post { patch(tag, rewrite, enabled) }
+        main.postDelayed({ patch(tag, rewrite, enabled) }, 400)
+        main.postDelayed({ patch(tag, rewrite, enabled) }, 1_200)
     }
 
-    /** 立刻扫一遍窗口，供 `Activity.onResume` 之类需要即时生效的地方调用。 */
+    /**
+     * 当前可用的三段电量（优先段数最多的那条），没数据时顺带回填一次快照。
+     *
+     * `TextView.setText` 钩子需要它：宿主每次重新绑定文本都要重新算一遍，
+     * 不能只依赖广播到达那一刻的窗口扫描。
+     */
+    fun currentTriple(): ColorOsBatteryTriple? {
+        appContext?.let { context -> ColorOsBatterySnapshot.restoreInto(context) }
+        return ColorOsPodBatteryStore.snapshot()
+            .mapNotNull(::colorOsBatteryTriple)
+            .maxByOrNull { it.parts.size }
+    }
+    /** 立刻扫一遍窗口。 */
     fun patch(tag: String, rewrite: Rewrite, enabled: () -> Boolean = { true }) {
         if (!enabled()) return
         runCatching {
-            // 刚起来的进程还没有任何电量广播，先拿蓝牙进程上次写的快照顶上。
-            appContext?.let { context -> ColorOsBatterySnapshot.restoreInto(context) }
-            val triple = ColorOsPodBatteryStore.snapshot()
-                .mapNotNull(::colorOsBatteryTriple)
-                .maxByOrNull { it.parts.size }
-                ?: return
+            val triple = currentTriple()
+            if (triple == null) {
+                Log.i(tag, "battery summary scan skipped: no battery data")
+                return
+            }
             val manager = Class.forName("android.view.WindowManagerGlobal")
                 .getDeclaredMethod("getInstance")
                 .invoke(null)
@@ -116,6 +122,46 @@ internal object ColorOsBatterySummaryInjector {
             }
             Log.i(tag, "battery summary scan roots=${roots.size} patched=$patched triple=$triple")
         }.onFailure { Log.w(tag, "unable to patch battery summary", it) }
+    }
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private fun registerReceiverIfNeeded(tag: String, rewrite: Rewrite, enabled: () -> Boolean) {
+        if (!receiverRegistered.compareAndSet(false, true)) return
+        val context = appContext
+        if (context == null) {
+            receiverRegistered.set(false)
+            return
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (!isTrustedSender(context, intent.action, senderUid(), tag)) return
+                val address = intent.getStringExtra("address")?.uppercase() ?: return
+                ColorOsPodBatteryStore.put(
+                    ColorOsPodBattery(
+                        address = address,
+                        left = intent.getIntExtra("left_battery", 0),
+                        leftConnected = intent.getBooleanExtra("left_connected", false),
+                        right = intent.getIntExtra("right_battery", 0),
+                        rightConnected = intent.getBooleanExtra("right_connected", false),
+                        case = intent.getIntExtra("case_battery", 0),
+                        caseConnected = intent.getBooleanExtra("case_connected", false),
+                        name = intent.getStringExtra("device_name")?.takeIf(String::isNotBlank),
+                    ),
+                )
+                main.post { patch(tag, rewrite, enabled) }
+            }
+        }
+        try {
+            context.registerReceiver(
+                receiver,
+                IntentFilter().apply { addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED) },
+                Context.RECEIVER_EXPORTED,
+            )
+            Log.i(tag, "battery summary injector installed")
+        } catch (t: Throwable) {
+            receiverRegistered.set(false)
+            throw t
+        }
     }
 
     /**

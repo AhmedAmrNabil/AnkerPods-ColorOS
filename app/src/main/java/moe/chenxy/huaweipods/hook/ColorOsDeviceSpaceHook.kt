@@ -200,6 +200,8 @@ private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
         }.onFailure { Log.w(TAG, "Unable to dump Device Space card tree", it) }
     }
 
+
+
     private fun idName(view: View): String = runCatching {
         if (view.id == View.NO_ID) "-" else view.resources.getResourceEntryName(view.id)
     }.getOrDefault("?")

@@ -579,3 +579,60 @@ adb shell 'am start -n "com.android.settings/com.android.settings.Settings\$Blue
 `ls -la /data/adb/lspd/log/ | tail` 取最新文件，再看时间戳对不对得上。
 另外 ColorOS 的 `am force-stop com.oplus.wirelesssettings` 不一定真杀（进程会自愈），
 要么 `killall`，要么确认 PID 变了才算重启。
+
+### 9.17 换设备复验：OPPO Pad Mini（ColorOS 17 / OPD2515）
+
+手机被人工占用，改在平板复验同一份 APK（`1a246871…eca3`，versionCode 29）。
+平板 root 走 KernelSU + LSPosed 2.2.1（7927），ColorOS 17 / API 37，1680x2520 @420dpi。
+
+蓝牙设置列表行（`com.oplus.wirelesssettings`）：
+
+![平板蓝牙设置列表行](.local/recon/verify6-05-tablet-bt-settings.png)
+
+```
+使用中，电量：左 100%，右 100%，盒 88%
+```
+
+模块自己的卡片（通知栏，三段 + 低时延按钮）：
+
+![平板通知栏卡片](.local/recon/verify6-06-tablet-shade-card.png)
+
+```
+HUAWEI FreeClip
+L 100% R 100% 耳机盒 88%
+低时延已关闭  [开启低时延]
+```
+
+结论：`TextView.setText` 改写方案跨设备成立，不依赖机型/分辨率/密度。
+
+### 9.18 平板的 LSPosed scope 少了两项（平台侧，必须手点）
+
+拉平板的 `/data/adb/lspd/config/modules_config.db` 查 `scope` 表，我们的模块只有 4 项：
+
+```
+com.heytap.accessory, com.heytap.mydevices, com.oplus.wirelesssettings, com.android.bluetooth
+```
+
+APK 里 `scope.list` 是 6 项，缺 `com.huawei.smartaudio` 和 `com.android.settings`。
+`staticScope=true` 只是把「可选范围」写死，真正生效的是这张表，模块更新不会自动补。
+必须进 LSPosed 管理器勾选；平板原来没装管理器（只有 `org.lsposed.corepatch`），
+这次从 `/data/adb/modules/zygisk_lsposed/manager.apk` 装上才能进 UI。
+
+所以「已连接的设备」页在平板上仍然复验不了，和手机上同一个卡点。
+
+### 9.19 SystemUI 插件 APK 也翻了：蓝牙卡片不在里面
+
+`pm path com.oplus.systemui.plugins` → `/system_ext/app/SystemUIPlugin/SystemUIPlugin.apk`
+（9.1 MB，sha256 `361c41c8…b62`，两个 dex）。统计结果：
+
+```
+dex 里 class 描述符 6303 个，其中 /seedling/ 相关 972 个
+名字里含 blue/Bluetooth/battery/device/tws 的：0 个
+```
+
+也就是说卡片 UI 是 seedling SDK 通用的那套（`SeedlingCardImpl` / `SeedlingCardOptions`），
+内容由数据驱动：`com.oplus.pantanal.ums/com.oplus.ums.content.DecisionService`（pantanal 决策服务）
+下发 `SeedlingUIData`，SystemUI 侧的 `SeedlingCardWindowController` 渲染。
+要改卡片内容，钩点应该是 SystemUI 进程里的 seedling 数据模型/`SeedlingCardOptions`，
+而不是找某个 `BlueToothCardView` 类——那东西在这两个包里根本不存在。
+下一步需要把 `com.android.systemui` 加进 scope，再定位 `SeedlingUIData` 的字段映射。

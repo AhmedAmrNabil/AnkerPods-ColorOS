@@ -69,10 +69,10 @@ object HuaweiPodsBroadcastTrustPolicy {
     internal fun shouldAcceptBoundHeadsetEvent(action: String?, uidPackages: Array<String>?): Boolean =
         isHeadsetLifecycleAction(action) && uidPackages?.any(::isTrustedBluetoothStateSender) == true
 
-    /** 我的设备只消费蓝牙进程确认的四类状态，不接受控制动作或其他宿主伪造的状态。 */
+    /** 我的设备消费蓝牙进程或应用后端广播的耳机状态。 */
     fun shouldAcceptMyDevicesStateBroadcast(action: String?, senderPackage: String?): Boolean =
         HuaweiPodsAction.canonical(action) in myDevicesStateActions &&
-            isTrustedBluetoothStateSender(senderPackage)
+            (senderPackage == PACKAGE_BLUETOOTH || senderPackage == PACKAGE_APP)
 
     /** 蓝牙设置消费蓝牙进程或应用后端广播的耳机状态。 */
     fun shouldAcceptWirelessSettingsStateBroadcast(action: String?, senderPackage: String?): Boolean =

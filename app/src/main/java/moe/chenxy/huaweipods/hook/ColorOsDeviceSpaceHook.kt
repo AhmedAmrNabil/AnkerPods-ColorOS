@@ -886,14 +886,18 @@ private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
     }
 
     @SuppressLint("MissingPermission")
+<<<<<<< HEAD
     private fun routeFor(context: Context, address: String): HuaweiDeviceRoute? {
         if (!android.bluetooth.BluetoothAdapter.checkBluetoothAddress(address)) return null
-        // 名字只是辅助：宿主没有 BLUETOOTH_CONNECT 时 getRemoteDevice(...).name 会抛异常，
-        // 之前整条 routeFor 因此返回 null，卡片图就退回宿主原生图。
         val rawName = runCatching {
             context.getSystemService(BluetoothManager::class.java)?.adapter
                 ?.getRemoteDevice(address)?.name
         }.getOrNull()
+        if (moe.chenxy.huaweipods.backend.soundcore.SoundcoreDeviceIdentifier.isLiberty4Nc(rawName) ||
+            rawName?.lowercase()?.contains("soundcore") == true
+        ) {
+            return HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        }
         return runCatching { DeviceRoutePrefs.resolve(prefs, address, rawName).takeIf { it.isSupported } }
             .getOrNull()
     }

@@ -444,6 +444,7 @@ object SoundcoreBackend : EarbudBackend {
 
     private fun sendAnc(mode: NoiseControlMode) {
         val ctx = appContext ?: return
+        activeDevice?.let { ColorOsSystemBatteryBridge.setLatestAnc(it.address, mode) }
         sendAppBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_ANC_CHANGED) {
             putExtra("status", mode.broadcastStatus)
         }

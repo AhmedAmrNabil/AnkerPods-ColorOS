@@ -2,6 +2,7 @@ package moe.chenxy.huaweipods.hook
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
@@ -29,6 +30,7 @@ import java.util.Locale
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import moe.chenxy.huaweipods.BuildConfig
+import moe.chenxy.huaweipods.backend.soundcore.SoundcoreDeviceIdentifier
 import moe.chenxy.huaweipods.broadcast.HuaweiPodsBroadcastTrustPolicy
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.HuaweiWearDetectionController
@@ -38,7 +40,9 @@ import moe.chenxy.huaweipods.pods.encodeHuaweiDeviceRouteForBroadcast
 import moe.chenxy.huaweipods.pods.supportsLowLatencyControl
 import moe.chenxy.huaweipods.pods.isSupported
 import moe.chenxy.huaweipods.pods.resolveHuaweiDeviceRoute
+import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
+import moe.chenxy.huaweipods.utils.miuiStrongToast.data.PodParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.addHuaweiPodsAction
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.sendIdentitySharingBroadcast
 
@@ -48,10 +52,9 @@ import moe.chenxy.huaweipods.utils.miuiStrongToast.data.sendIdentitySharingBroad
  * - ColorOS 16.1（com.heytap.mydevices 17.4.15）：ViewBinding 详情页，复用 `row_bt_setting` 行。
  * - ColorOS 17（com.heytap.mydevices 17.25.10）：详情页改为 Preference 页面，复用
  *   `pref_bt_audio_settings`（打开系统蓝牙设备设置）这一项。
- *
- * 两代页面都只改写系统已有的入口，不新增依赖 COUI 私有资源的 View。17.x 的 androidx 类成员
- * 均被混淆，因此按类型结构定位绑定方法，并通过 `android.R.id.title/summary` 修改文字。
- * 所有反射都有兜底，未知版本保持系统原样。
+ * - Quick Settings / Control Center / Lockscreen widget:
+ *   通过拦截 OplusBluetoothAdapterWrapper、BlueToothScannerImpl 及 LiteCardWidget，将 Soundcore 与
+ *   华为耳机注入为原生 BT_AIRPODS/TWS 设备，显示耳机图标、独立双耳电量，并避免锁屏单电量文字过长截断。
  */
 object ColorOsMyDevicesHook : HookContext() {
     private const val TAG = "HuaweiPods-ColorOsMyDevices"
@@ -70,6 +73,7 @@ object ColorOsMyDevicesHook : HookContext() {
     private val activeRows = WeakHashMap<View, ColorOsHeadsetRow>()
     private val preferenceRows = WeakHashMap<Any, ColorOsHeadsetRow>()
     private val hostRows = WeakHashMap<View, HostRowSnapshot>()
+    private val latestBatteries = ConcurrentHashMap<String, BatteryParams>()
     private val latestSummaries = ConcurrentHashMap<String, String>()
     private val latestAncModes = ConcurrentHashMap<String, NoiseControlMode>()
     private val latestLowLatency = ConcurrentHashMap<String, Boolean>()
@@ -77,17 +81,352 @@ object ColorOsMyDevicesHook : HookContext() {
     private val toggleWrites = ColorOsToggleWriteLedger()
     private val hookedBindMethods = ConcurrentHashMap.newKeySet<Method>()
 
+    fun isSupportedDevice(device: BluetoothDevice?): Boolean {
+        if (device == null) return false
+        val addr = device.address
+        val name = runCatching { device.name ?: device.alias }.getOrNull()
+        if (SoundcoreDeviceIdentifier.isLiberty4Nc(name) || SoundcoreDeviceIdentifier.isSoundcoreDevice(device)) return true
+        val route = resolveHuaweiDeviceRoute(addr, name)
+        return route.isSupported
+    }
+
+    fun isSupportedAddress(address: String?): Boolean {
+        if (address.isNullOrBlank()) return false
+        val upper = address.uppercase()
+        if (latestBatteries.containsKey(upper)) return true
+        val dev = bluetoothDevice(upper)
+        return isSupportedDevice(dev)
+    }
+
     override fun onHook() {
+        runCatching { hookOplusBluetoothAdapterWrapper() }
+            .onSuccess { Log.i(TAG, "OplusBluetoothAdapterWrapper hook installed") }
+            .onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper hook failed", it) }
+        runCatching { hookOplusBluetoothDevice() }
+            .onSuccess { Log.i(TAG, "OplusBluetoothDevice hook installed") }
+            .onFailure { Log.w(TAG, "OplusBluetoothDevice hook failed", it) }
+        runCatching { hookIconHandler() }
+            .onSuccess { Log.i(TAG, "IconHandler hook installed") }
+            .onFailure { Log.w(TAG, "IconHandler hook failed", it) }
+        runCatching { hookBlueToothScannerImpl() }
+            .onSuccess { Log.i(TAG, "BlueToothScannerImpl hook installed") }
+            .onFailure { Log.w(TAG, "BlueToothScannerImpl hook failed", it) }
+        runCatching { hookLiteCardWidget() }
+            .onSuccess { Log.i(TAG, "LiteCardWidget hook installed") }
+            .onFailure { Log.w(TAG, "LiteCardWidget hook failed", it) }
+
         val legacy = runCatching { hookLegacyDetailPage() }
         val preference = runCatching { hookPreferenceDetailPage() }
         if (legacy.isSuccess) Log.i(TAG, "My Devices 16.x detail hook installed")
         if (preference.isSuccess) Log.i(TAG, "My Devices 17.x preference detail hook installed")
-        if (legacy.isFailure && preference.isFailure) {
-            Log.w(
-                TAG,
-                "Unsupported My Devices build; leaving the stock page unchanged",
-                preference.exceptionOrNull() ?: legacy.exceptionOrNull()!!,
+
+        val app = currentApplicationOrNull()
+        if (app != null) {
+            registerStatusReceiver(app)
+            requestCurrentStatus(app)
+        } else {
+            hookApplicationOnCreate()
+        }
+    }
+
+    private fun hookApplicationOnCreate() {
+        runCatching {
+            val appCls = findClass("android.app.Application")
+            val method = appCls.getDeclaredMethod("onCreate")
+            hookAfter(method) {
+                val app = instance as? Application ?: return@hookAfter
+                registerStatusReceiver(app)
+                requestCurrentStatus(app)
+            }
+        }.onFailure { Log.w(TAG, "Unable to hook Application.onCreate", it) }
+    }
+
+    private fun hookOplusBluetoothAdapterWrapper() {
+        val cls = runCatching {
+            findClass("com.heytap.mydevices.core.bluetooth.OplusBluetoothAdapterWrapper")
+        }.getOrNull() ?: return
+
+        // c(BluetoothDevice): checkIsAirpodsDevice
+        runCatching {
+            val method = cls.getDeclaredMethod("c", BluetoothDevice::class.java)
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                if (isSupportedDevice(dev)) result = true
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.c hook unavailable", it) }
+
+        // d(String): checkIsAirpodsDevice by address
+        runCatching {
+            val method = cls.getDeclaredMethod("d", String::class.java)
+            hookBefore(method) {
+                val addr = args.firstOrNull() as? String ?: return@hookBefore
+                if (isSupportedAddress(addr)) result = true
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.d hook unavailable", it) }
+
+        // o(String): getBatteryInfoSync -> int[]
+        runCatching {
+            val method = cls.getDeclaredMethod("o", String::class.java)
+            hookBefore(method) {
+                val addr = args.firstOrNull() as? String ?: return@hookBefore
+                if (isSupportedAddress(addr)) {
+                    val battery = latestBatteries[addr.uppercase()]
+                    if (battery != null) {
+                        result = colorOsTwsBatteryInfo(battery)
+                    } else {
+                        val dev = bluetoothDevice(addr)
+                        val level = runCatching {
+                            dev?.javaClass?.getMethod("getBatteryLevel")?.invoke(dev) as? Int
+                        }.getOrNull()?.coerceIn(0, 100) ?: 100
+                        result = intArrayOf(level, level, level, 2, 2, 2)
+                    }
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.o hook unavailable", it) }
+
+        // l(BluetoothDevice): getAirpodsModel -> String
+        runCatching {
+            val method = cls.getDeclaredMethod("l", BluetoothDevice::class.java)
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                if (isSupportedDevice(dev)) result = "AirPods Pro 2"
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.l hook unavailable", it) }
+
+        // G(BluetoothDevice, int): getStringMetaData -> String
+        runCatching {
+            val method = cls.getDeclaredMethod("G", BluetoothDevice::class.java, Int::class.javaPrimitiveType!!)
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                val id = args.getOrNull(1) as? Int ?: return@hookBefore
+                if (id == 17 && isSupportedDevice(dev)) result = "oplusEarBuds"
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.G hook unavailable", it) }
+
+        // u(BluetoothDevice): getDeviceExtendFeatureMask -> int
+        runCatching {
+            val method = cls.getDeclaredMethod("u", BluetoothDevice::class.java)
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                if (isSupportedDevice(dev)) result = 1581
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.u hook unavailable", it) }
+
+        // v(String): getDeviceExtendFeatureMask by address -> int
+        runCatching {
+            val method = cls.getDeclaredMethod("v", String::class.java)
+            hookBefore(method) {
+                val addr = args.firstOrNull() as? String ?: return@hookBefore
+                if (isSupportedAddress(addr)) result = 1581
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.v hook unavailable", it) }
+
+        // y(String, int): getExtendFeatureStatus -> int
+        runCatching {
+            val method = cls.getDeclaredMethod("y", String::class.java, Int::class.javaPrimitiveType!!)
+            hookBefore(method) {
+                val addr = args.firstOrNull() as? String ?: return@hookBefore
+                val feat = args.getOrNull(1) as? Int ?: return@hookBefore
+                if (feat == 4 && isSupportedAddress(addr)) {
+                    val mode = latestAncModes[addr.uppercase()] ?: NoiseControlMode.OFF
+                    result = when (mode) {
+                        NoiseControlMode.OFF -> 1
+                        NoiseControlMode.NOISE_CANCELLATION -> 2
+                        NoiseControlMode.TRANSPARENCY -> 3
+                        else -> 1
+                    }
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.y hook unavailable", it) }
+
+        // x(BluetoothDevice, int): getExtendFeatureStatus -> int
+        runCatching {
+            val method = cls.getDeclaredMethod("x", BluetoothDevice::class.java, Int::class.javaPrimitiveType!!)
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                val feat = args.getOrNull(1) as? Int ?: return@hookBefore
+                if (feat == 4 && isSupportedDevice(dev)) {
+                    val mode = latestAncModes[dev.address.uppercase()] ?: NoiseControlMode.OFF
+                    result = when (mode) {
+                        NoiseControlMode.OFF -> 1
+                        NoiseControlMode.NOISE_CANCELLATION -> 2
+                        NoiseControlMode.TRANSPARENCY -> 3
+                        else -> 1
+                    }
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.x hook unavailable", it) }
+
+        // W(String, int, int): setExtendFeatureStatus
+        runCatching {
+            val method = cls.getDeclaredMethod(
+                "W",
+                String::class.java,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
             )
+            hookBefore(method) {
+                val addr = args.firstOrNull() as? String ?: return@hookBefore
+                val feat = args.getOrNull(1) as? Int ?: return@hookBefore
+                val value = args.getOrNull(2) as? Int ?: return@hookBefore
+                if (feat == 4 && isSupportedAddress(addr)) {
+                    val mode = when (value) {
+                        1 -> NoiseControlMode.OFF
+                        2 -> NoiseControlMode.NOISE_CANCELLATION
+                        3 -> NoiseControlMode.TRANSPARENCY
+                        else -> NoiseControlMode.OFF
+                    }
+                    latestAncModes[addr.uppercase()] = mode
+                    refreshQuickControls(addr.uppercase())
+                    val context = currentApplicationOrNull() ?: statusReceiverContext
+                    if (context != null) {
+                        val intent = Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
+                            setPackage(BLUETOOTH_PACKAGE)
+                            putExtra("status", mode.broadcastStatus)
+                            putExtra("address", addr)
+                            addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                        }
+                        context.sendBroadcast(intent)
+                    }
+                    result = null
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.W hook unavailable", it) }
+    }
+
+    private fun hookOplusBluetoothDevice() {
+        val cls = runCatching {
+            findClass("android.bluetooth.OplusBluetoothDevice")
+        }.getOrNull() ?: return
+
+        fun extractDevice(inst: Any?): BluetoothDevice? {
+            if (inst == null) return null
+            return runCatching {
+                inst.javaClass.declaredFields.firstOrNull { it.type == BluetoothDevice::class.java }
+                    ?.apply { isAccessible = true }
+                    ?.get(inst) as? BluetoothDevice
+            }.getOrNull()
+        }
+
+        runCatching {
+            val method = cls.getDeclaredMethod("checkIsAirpodsDevice")
+            hookBefore(method) {
+                val device = extractDevice(instance)
+                if (device != null && isSupportedDevice(device)) {
+                    result = true
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothDevice.checkIsAirpodsDevice hook unavailable", it) }
+
+        runCatching {
+            val method = cls.getDeclaredMethod("getBatteryInfo")
+            hookBefore(method) {
+                val device = extractDevice(instance)
+                if (device != null && isSupportedDevice(device)) {
+                    val battery = latestBatteries[device.address.uppercase()]
+                    if (battery != null) {
+                        result = colorOsTwsBatteryInfo(battery)
+                    }
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothDevice.getBatteryInfo hook unavailable", it) }
+
+        runCatching {
+            val method = cls.getDeclaredMethod("getDeviceModel")
+            hookBefore(method) {
+                val device = extractDevice(instance)
+                if (device != null && isSupportedDevice(device)) {
+                    result = "AirPods Pro 2"
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothDevice.getDeviceModel hook unavailable", it) }
+
+        runCatching {
+            val method = cls.getDeclaredMethod("getDeviceExtendFeatureMask")
+            hookBefore(method) {
+                val device = extractDevice(instance)
+                if (device != null && isSupportedDevice(device)) {
+                    result = 1581
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothDevice.getDeviceExtendFeatureMask hook unavailable", it) }
+
+        runCatching {
+            val method = cls.getDeclaredMethod("getExtendFeatureStatus", Int::class.javaPrimitiveType!!)
+            hookBefore(method) {
+                val device = extractDevice(instance)
+                val featureId = args.firstOrNull() as? Int ?: return@hookBefore
+                if (device != null && featureId == 4 && isSupportedDevice(device)) {
+                    val mode = latestAncModes[device.address.uppercase()] ?: NoiseControlMode.OFF
+                    result = when (mode) {
+                        NoiseControlMode.OFF -> 1
+                        NoiseControlMode.NOISE_CANCELLATION -> 2
+                        NoiseControlMode.TRANSPARENCY -> 3
+                        else -> 1
+                    }
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothDevice.getExtendFeatureStatus hook unavailable", it) }
+    }
+
+    private fun hookIconHandler() {
+        val cls = runCatching { findClass("aa.EA") }.getOrNull() ?: return
+        runCatching {
+            val method = cls.getDeclaredMethod("f", BluetoothDevice::class.java)
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                if (isSupportedDevice(dev)) result = 2001
+            }
+        }.onFailure { Log.w(TAG, "IconHandler.f hook unavailable", it) }
+
+        runCatching {
+            val method = cls.getDeclaredMethod("d", Int::class.javaPrimitiveType!!, BluetoothDevice::class.java)
+            hookBefore(method) {
+                val dev = args.getOrNull(1) as? BluetoothDevice ?: return@hookBefore
+                if (isSupportedDevice(dev)) result = "IMG_bt_a2dp_homepage.webp"
+            }
+        }.onFailure { Log.w(TAG, "IconHandler.d hook unavailable", it) }
+    }
+
+    private fun hookBlueToothScannerImpl() {
+        val cls = runCatching { findClass("com.heytap.mydevices.core.device.BlueToothScannerImpl") }.getOrNull() ?: return
+        runCatching {
+            val method = cls.getDeclaredMethod("D", BluetoothDevice::class.java, Int::class.javaPrimitiveType!!)
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                val inst = instance ?: return@hookBefore
+                if (isSupportedDevice(dev)) {
+                    val i = args.getOrNull(1) as? Int ?: -1
+                    val deviceInfoCls = findClass("com.oplus.mydevices.domain.entities.device.DeviceInfo")
+                    val bMethod = inst.javaClass.getDeclaredMethod("B", BluetoothDevice::class.java, deviceInfoCls, Int::class.javaPrimitiveType!!)
+                    bMethod.isAccessible = true
+                    result = bMethod.invoke(inst, dev, null, i)
+                }
+            }
+        }.onFailure { Log.w(TAG, "BlueToothScannerImpl.D hook unavailable", it) }
+    }
+
+    private fun hookLiteCardWidget() {
+        val cls = runCatching { findClass("com.oplus.mydevices.remotecards.litecardwidget.LiteCardWidget") }.getOrNull() ?: return
+        val genMethod = cls.declaredMethods.firstOrNull { it.name == "generateDeviceInfo" } ?: return
+        hookAfter(genMethod) {
+            val cardInfo = result ?: return@hookAfter
+            val devObj = args.lastOrNull() ?: return@hookAfter
+            val addr = runCatching { callMethod(devObj, "getMacAddress") as? String }.getOrNull()
+            if (isSupportedAddress(addr)) {
+                cardInfo.javaClass.declaredFields.forEach { field ->
+                    field.isAccessible = true
+                    if (field.type == Boolean::class.javaPrimitiveType && field.name == "b") {
+                        field.setBoolean(cardInfo, false)
+                    }
+                    if (field.type == String::class.java && field.name == "h") {
+                        val curIcon = field.get(cardInfo) as? String
+                        if (curIcon != null && curIcon.contains("HEADSET")) {
+                            field.set(cardInfo, curIcon.replace("HEADSET", "LR"))
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -112,6 +451,7 @@ object ColorOsMyDevicesHook : HookContext() {
         synchronized(preferenceRows) { preferenceRows.clear() }
         synchronized(hostRows) { hostRows.clear() }
         toggleWrites.clear()
+        latestBatteries.clear()
         latestSummaries.clear()
         latestAncModes.clear()
         latestLowLatency.clear()
@@ -228,7 +568,10 @@ object ColorOsMyDevicesHook : HookContext() {
         val deviceName = runCatching { callMethod(viewModel, "u") as? String }.getOrNull()
             ?.takeIf(String::isNotBlank)
             ?: runCatching { device?.name ?: device?.alias }.getOrNull()
-        val route = resolveHuaweiDeviceRoute(address, deviceName)
+        var route = resolveHuaweiDeviceRoute(address, deviceName)
+        if (!route.isSupported && (SoundcoreDeviceIdentifier.isLiberty4Nc(deviceName) || deviceName?.lowercase()?.contains("soundcore") == true)) {
+            route = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        }
         if (!route.isSupported || device == null) return
 
         val row = legacySettingsRow(fragment, root) ?: run {
@@ -257,7 +600,10 @@ object ColorOsMyDevicesHook : HookContext() {
         val address = preferenceFragmentAddress(fragment) ?: return
         val device = bluetoothDevice(address) ?: return
         val deviceName = runCatching { device.alias ?: device.name }.getOrNull()
-        val route = resolveHuaweiDeviceRoute(address, deviceName)
+        var route = resolveHuaweiDeviceRoute(address, deviceName)
+        if (!route.isSupported && (SoundcoreDeviceIdentifier.isLiberty4Nc(deviceName) || deviceName?.lowercase()?.contains("soundcore") == true)) {
+            route = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        }
         if (!route.isSupported) return
 
         val preference = runCatching {
@@ -403,6 +749,7 @@ object ColorOsMyDevicesHook : HookContext() {
                     if (!mode.isKnownMode()) return
                     latestAncModes[address] = mode
                     refreshQuickControls(address)
+                    notifyAirpodsNoiseMode(address, mode)
                     return
                 }
                 if (action == HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_CHANGED) {
@@ -452,24 +799,42 @@ object ColorOsMyDevicesHook : HookContext() {
                 }
                 if (action != HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED) return
                 val address = received.getStringExtra("address")?.uppercase() ?: return
+                val left = received.getIntExtra("left_battery", -1)
+                val leftConn = received.getBooleanExtra("left_connected", false)
+                val leftChg = received.getBooleanExtra("left_charging", false)
+                val right = received.getIntExtra("right_battery", -1)
+                val rightConn = received.getBooleanExtra("right_connected", false)
+                val rightChg = received.getBooleanExtra("right_charging", false)
+                val case = received.getIntExtra("case_battery", -1)
+                val caseConn = received.getBooleanExtra("case_connected", false)
+                val caseChg = received.getBooleanExtra("case_charging", false)
+
+                val batteryParams = BatteryParams(
+                    left = PodParams(left, leftConn, leftChg),
+                    right = PodParams(right, rightConn, rightChg),
+                    case = PodParams(case, caseConn, caseChg),
+                )
+                latestBatteries[address] = batteryParams
+                notifyAirpodsBattery(address, batteryParams)
+
                 ColorOsPodBatteryStore.put(
                     ColorOsPodBattery(
                         address = address,
-                        left = received.getIntExtra("left_battery", 0),
-                        leftConnected = received.getBooleanExtra("left_connected", false),
-                        right = received.getIntExtra("right_battery", 0),
-                        rightConnected = received.getBooleanExtra("right_connected", false),
-                        case = received.getIntExtra("case_battery", 0),
-                        caseConnected = received.getBooleanExtra("case_connected", false),
+                        left = if (leftConn && left >= 0) left else 0,
+                        leftConnected = leftConn,
+                        right = if (rightConn && right >= 0) right else 0,
+                        rightConnected = rightConn,
+                        case = if (caseConn && case >= 0) case else 0,
+                        caseConnected = caseConn,
                     ),
                 )
                 val summary = colorOsBatterySummary(
-                    leftBattery = received.getIntExtra("left_battery", 0),
-                    leftConnected = received.getBooleanExtra("left_connected", false),
-                    rightBattery = received.getIntExtra("right_battery", 0),
-                    rightConnected = received.getBooleanExtra("right_connected", false),
-                    caseBattery = received.getIntExtra("case_battery", 0),
-                    caseConnected = received.getBooleanExtra("case_connected", false),
+                    leftBattery = left,
+                    leftConnected = leftConn,
+                    rightBattery = right,
+                    rightConnected = rightConn,
+                    caseBattery = case,
+                    caseConnected = caseConn,
                     chinese = Locale.getDefault().language == Locale.CHINESE.language,
                 ) ?: return
                 latestSummaries[address] = summary
@@ -495,6 +860,38 @@ object ColorOsMyDevicesHook : HookContext() {
             statusReceiverContext = appContext
         }.onFailure {
             Log.w(TAG, "Unable to register My Devices battery receiver", it)
+        }
+    }
+
+    private fun notifyAirpodsBattery(address: String, batteryParams: BatteryParams) {
+        runCatching {
+            val dev = bluetoothDevice(address) ?: return@runCatching
+            val obsCls = findClass("com.heytap.mydevices.core.bluetooth.AirpodsStatusObserver")
+            val companionField = obsCls.getDeclaredField("Companion").apply { isAccessible = true }
+            val companion = companionField.get(null)
+            val instMethod = companion.javaClass.getMethod("getInstance")
+            val observer = instMethod.invoke(companion)
+            val notifyMethod = obsCls.getDeclaredMethod("notifyBatteryLevelChanged", BluetoothDevice::class.java, IntArray::class.java).apply { isAccessible = true }
+            notifyMethod.invoke(observer, dev, colorOsTwsBatteryInfo(batteryParams))
+        }
+    }
+
+    private fun notifyAirpodsNoiseMode(address: String, mode: NoiseControlMode) {
+        runCatching {
+            val dev = bluetoothDevice(address) ?: return@runCatching
+            val obsCls = findClass("com.heytap.mydevices.core.bluetooth.AirpodsStatusObserver")
+            val companionField = obsCls.getDeclaredField("Companion").apply { isAccessible = true }
+            val companion = companionField.get(null)
+            val instMethod = companion.javaClass.getMethod("getInstance")
+            val observer = instMethod.invoke(companion)
+            val notifyMethod = obsCls.getDeclaredMethod("notifyNoiseModeChanged", BluetoothDevice::class.java, Int::class.javaPrimitiveType!!).apply { isAccessible = true }
+            val ancVal = when (mode) {
+                NoiseControlMode.OFF -> 1
+                NoiseControlMode.NOISE_CANCELLATION -> 2
+                NoiseControlMode.TRANSPARENCY -> 3
+                else -> 1
+            }
+            notifyMethod.invoke(observer, dev, ancVal)
         }
     }
 

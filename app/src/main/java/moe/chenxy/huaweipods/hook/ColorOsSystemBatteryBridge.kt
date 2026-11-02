@@ -78,6 +78,19 @@ internal object ColorOsSystemBatteryBridge {
     @Volatile
     private var cachedAirPodsManager: Pair<ClassLoader, Any?>? = null
 
+    private val latestBatteries = java.util.concurrent.ConcurrentHashMap<String, BatteryParams>()
+    private val latestAncModes = java.util.concurrent.ConcurrentHashMap<String, moe.chenxy.huaweipods.pods.NoiseControlMode>()
+
+    fun getLatestBattery(address: String?): BatteryParams? =
+        address?.uppercase()?.let { latestBatteries[it] }
+
+    fun getLatestAnc(address: String?): moe.chenxy.huaweipods.pods.NoiseControlMode? =
+        address?.uppercase()?.let { latestAncModes[it] }
+
+    fun setLatestAnc(address: String?, mode: moe.chenxy.huaweipods.pods.NoiseControlMode) {
+        address?.uppercase()?.let { latestAncModes[it] = mode }
+    }
+
     private val enabled: Boolean by lazy {
         RomIntegrationPolicy.detect(Build.MANUFACTURER, Build.BRAND) == RomFamily.COLOR_OS
     }
@@ -90,6 +103,7 @@ internal object ColorOsSystemBatteryBridge {
         inEar: Boolean? = null,
     ) {
         if (!enabled) return
+        latestBatteries[device.address.uppercase()] = battery
         // 顺带把三段电量写进全局快照：其它进程（蓝牙设置 / 设备详细信息页）启动时先读它，
         // 不必等下一包广播才显示得出三段。
         runCatching {

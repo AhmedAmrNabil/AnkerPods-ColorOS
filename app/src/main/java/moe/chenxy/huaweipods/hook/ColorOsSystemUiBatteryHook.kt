@@ -20,7 +20,8 @@ import android.widget.TextView
  * 安全约束（SystemUI 崩了就没有状态栏，必须保守）：
  * - 全程 `runCatching`，任何异常都不往外抛；
  * - 只读 `args[0]`，不改写；本类不调用 `proceedWithArgs`；
- * - 同一条文本只记一次，最多 300 条，避免刷爆日志。
+ * - 同一条文本只记一次，最多 300 条，避免刷爆日志；
+ * - 探针走 `Log.d`，只有把日志级别调到 DEBUG 才会输出，默认 release 静默。
  */
 internal object ColorOsSystemUiBatteryHook : HookContext() {
     private const val TAG = "HuaweiPods-SystemUi"
@@ -32,7 +33,7 @@ internal object ColorOsSystemUiBatteryHook : HookContext() {
 
     override fun onHook() {
         runCatching { hookBatteryText() }
-            .onSuccess { Log.i(TAG, "SystemUI battery text probe installed") }
+            .onSuccess { Log.d(TAG, "SystemUI battery text probe installed") }
             .onFailure { Log.w(TAG, "SystemUI battery text probe unavailable", it) }
     }
 
@@ -48,7 +49,8 @@ internal object ColorOsSystemUiBatteryHook : HookContext() {
                 val view = instance as? TextView
                 val shape = DIGITS.replace(raw, "#")
                 if (probed.size < MAX_PROBES && probed.add(shape)) {
-                    Log.i(
+                    // 纯探针：只在 LogLevel=DEBUG 时出声，release 默认不刷日志。
+                    Log.d(
                         TAG,
                         "probe text=\"$raw\" view=${view?.javaClass?.name} " +
                             "chain=${viewChain(view)} id=${viewId(view)}",

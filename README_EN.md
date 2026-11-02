@@ -133,6 +133,7 @@ The table lists currently integrated capabilities. Unlisted official features sh
 3. Select the scopes for your system:
    - Required: `com.android.bluetooth`, `com.heytap.mydevices`, and `com.heytap.accessory` (`com.heytap.accessory` enables the system Quick Device Connect popup).
    - Optional: `com.oplus.wirelesssettings` (earphone battery and settings entry in the system Bluetooth settings).
+- Optional: `com.android.settings` (three-part battery on the Bluetooth device-details page).
    - Optional: `com.huawei.smartaudio` (when Huawei AI Life/Smart Audio is installed, for FreeClip 2 spatial-audio and custom-EQ synchronization).
 4. Reboot the phone, or restart the scoped apps from HuaweiPods.
 5. On ColorOS 16+, open **ColorOS Fluid Cloud** in HuaweiPods settings and enable **Live alerts** in the system notification settings.

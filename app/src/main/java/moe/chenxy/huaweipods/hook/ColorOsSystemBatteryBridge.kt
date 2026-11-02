@@ -1,5 +1,6 @@
 package moe.chenxy.huaweipods.hook
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.os.Build
@@ -74,6 +75,7 @@ internal object ColorOsSystemBatteryBridge {
         RomIntegrationPolicy.detect(Build.MANUFACTURER, Build.BRAND) == RomFamily.COLOR_OS
     }
 
+    @SuppressLint("MissingPermission")
     fun publish(
         context: Context,
         device: BluetoothDevice,
@@ -81,6 +83,23 @@ internal object ColorOsSystemBatteryBridge {
         inEar: Boolean? = null,
     ) {
         if (!enabled) return
+        // 顺带把三段电量写进全局快照：其它进程（蓝牙设置 / 设备详细信息页）启动时先读它，
+        // 不必等下一包广播才显示得出三段。
+        runCatching {
+            ColorOsBatterySnapshot.save(
+                context,
+                ColorOsPodBattery(
+                    address = device.address,
+                    left = battery.left?.battery ?: 0,
+                    leftConnected = battery.left?.isConnected == true,
+                    right = battery.right?.battery ?: 0,
+                    rightConnected = battery.right?.isConnected == true,
+                    case = battery.case?.battery ?: 0,
+                    caseConnected = battery.case?.isConnected == true,
+                    name = device.name,
+                ),
+            )
+        }
         val info = colorOsTwsBatteryInfo(battery)
         val remote = oplusRemoteDevice(context)
         if (remote != null) {

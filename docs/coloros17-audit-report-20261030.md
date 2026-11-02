@@ -452,3 +452,54 @@ HUAWEI FreeClip
 
 **当前状态**：单测 694 通过 / 0 失败，Lint 0 error，Release 通过，APK `8f04a5c7…2906`。
 真机未验证——写这段时代码只过了构建与单测，设备不在手边。
+### 9.11 设备详细信息页三段电量：真机验证通过
+
+![设备详细信息页三段电量](.local/recon/verify6-01-device-detail.png)
+
+```
+HUAWEI FreeClip
+已开启。电量： 左100%，右100%，盒94%。
+```
+
+- 页面：`com.android.settings/.Settings$BluetoothDeviceDetailActivity`（ColorOS 17 里唯一没搬进
+  `com.oplus.wirelesssettings` 的设备页）
+- 数据：左/右 100%、盒 94%，与同一时刻模块耳机页、常驻通知一致
+- 日志：`(com.android.settings)[…,HuaweiPods-ColorOsDeviceDetail,…] device detail battery hook installed`
+  / `battery summary injector installed`
+- 复现步骤（每步都验证过）：LSPosed 勾选「设置」作用域 → `am force-stop com.android.settings`
+  → 模块耳机页右上齿轮 → 页面停留 1~2 秒后由单值变三段
+
+### 9.12 两个让这件事成立的前提
+
+**① 静态作用域要写进 APK。** 模块的 `META-INF/xposed/module.prop` 声明了 `staticScope=true`，
+作用域清单是 `app/src/{release,debug}/resources/META-INF/xposed/scope.list`（构建时打进 APK，
+不是 LSPosed 里的勾选）。往里面加 `com.android.settings` 后重装，LSPosed 才会把「设置」列出来并注入。
+
+**② 新进程拿不到电量。** `ColorOsPodBatteryStore` 只在单进程内存里，靠电量广播填充；
+`com.android.settings` 冷启动时手上什么都没有，得等下一包广播。所以新增
+`ColorOsBatterySnapshot`：蓝牙进程每次 publish 时把
+`30:A9:98:CJ:…|L|L_conn|R|R_conn|case|case_conn|name` 写进
+`Settings.Global/huaweipods_battery_snapshot`，其它进程 patch 前先回填。
+真机抓到的值：`30:A9:98:CB:C4:54|100|1|100|1|93|1|HUAWEI FreeClip`。
+
+同时把「进入页面后补刷」做成三段：`onResume` 立刻、+400ms、+1200ms 各扫一次窗口，
+因为宿主是在 `onResume` 之后才把 summary 绑上去的。
+
+### 9.13 低电提醒预览：真机验证通过
+
+![低电提醒测试通知](.local/recon/verify6-02-low-battery-preview.png)
+
+```
+🔵 HUAWEI FreeClip 电量低        刚刚
+测试提醒 · 当前电量：左 100% 右 100%
+```
+
+入口：模块 → 关于 → 右上齿轮 → 设置 → 耳机低电量提醒 → **发送测试提醒**
+（发送方必须是模块 App 自己，`ACTION_PREVIEW_LOW_BATTERY_REMINDER` 属于 APP_CONTROL 域，
+shell 直接广播会被信任策略拒掉）。
+
+**两次点不出来暴露的真问题**：`postLowBatteryReminder` 第一行是
+`if (!ModuleResourceResolver.isCurrentModuleBuild(context)) return`。
+我连续重装了几轮 APK，而蓝牙进程还停在旧模块上，这个判断直接返回，**连日志都不打**。
+`am force-stop com.android.bluetooth` 让它重新加载当前模块后，点一次就出来了。
+结论：验证模块侧的通知/弹窗，改完 APK 要重启对应作用域进程，否则看到的是旧代代码。

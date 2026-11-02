@@ -34,6 +34,10 @@ internal object ColorOsBatterySummaryInjector {
 
     private val main = Handler(Looper.getMainLooper())
 
+    /** 供快照回填用的进程级 Context；新进程在这里拿不到广播数据，只能先读上次的快照。 */
+    @Volatile
+    private var appContext: Context? = null
+
     /** 在宿主 `Application.onCreate` 之后调用：注册接收器并补三刷（首屏渲染比 onCreate 晚）。 */
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun install(
@@ -43,6 +47,7 @@ internal object ColorOsBatterySummaryInjector {
         enabled: () -> Boolean = { true },
     ) {
         runCatching {
+            appContext = app.applicationContext
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
                     if (!isTrustedSender(context, intent.action, senderUid(), tag)) return
@@ -78,6 +83,8 @@ internal object ColorOsBatterySummaryInjector {
     fun patch(tag: String, rewrite: Rewrite, enabled: () -> Boolean = { true }) {
         if (!enabled()) return
         runCatching {
+            // 刚起来的进程还没有任何电量广播，先拿蓝牙进程上次写的快照顶上。
+            appContext?.let { context -> ColorOsBatterySnapshot.restoreInto(context) }
             val triple = ColorOsPodBatteryStore.snapshot()
                 .mapNotNull(::colorOsBatteryTriple)
                 .maxByOrNull { it.parts.size }
@@ -107,9 +114,7 @@ internal object ColorOsBatterySummaryInjector {
                     }
                 }
             }
-            if (patched > 0) {
-                Log.i(tag, "battery summary patched rows=$patched triple=$triple")
-            }
+            Log.i(tag, "battery summary scan roots=${roots.size} patched=$patched triple=$triple")
         }.onFailure { Log.w(tag, "unable to patch battery summary", it) }
     }
 

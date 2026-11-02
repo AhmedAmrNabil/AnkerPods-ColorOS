@@ -178,6 +178,7 @@ HuaweiPods ColorOS 是一个使用独立应用 ID `io.github.artifical0.huaweipo
 
    - 必选：`com.android.bluetooth`、`com.heytap.mydevices`、`com.heytap.accessory`（`com.heytap.accessory` 用于系统“快速设备连接”官方弹窗）
    - 可选：`com.oplus.wirelesssettings`（系统蓝牙设置中的耳机电量与“耳机设置”入口）
+- 可选：`com.android.settings`（蓝牙「设备详细信息」页的三段电量）
    - 可选：`com.huawei.smartaudio`（已安装华为智慧音频时，用于 FreeClip 2 空间音频与自定义音效同步）
 
 4. 在 HuaweiPods 内重启相关作用域，或重启手机。

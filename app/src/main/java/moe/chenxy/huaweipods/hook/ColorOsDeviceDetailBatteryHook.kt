@@ -22,6 +22,8 @@ internal object ColorOsDeviceDetailBatteryHook : HookContext() {
     /** 详细信息页在前台的实例数（同一页可能被重建，用计数比布尔更稳）。 */
     private val visible = AtomicInteger(0)
 
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
     private val rewrite = ColorOsBatterySummaryInjector.Rewrite { text, triple ->
         ColorOsSettingsBatteryText.rewriteSingleValue(text, triple)
     }
@@ -40,7 +42,11 @@ internal object ColorOsDeviceDetailBatteryHook : HookContext() {
             val activity = instance as? Activity ?: return@hookAfter
             if (!activity.isDetailPage()) return@hookAfter
             visible.incrementAndGet()
-            ColorOsBatterySummaryInjector.patch(TAG, rewrite) { visible.get() > 0 }
+            Log.i(TAG, "detail page resumed class=${activity.javaClass.name}")
+            // 宿主的 summary 由 Preference 在 onResume 之后才绑定，扫一次不够，补两刷。
+            main.post { ColorOsBatterySummaryInjector.patch(TAG, rewrite) { visible.get() > 0 } }
+            main.postDelayed({ ColorOsBatterySummaryInjector.patch(TAG, rewrite) { visible.get() > 0 } }, 400)
+            main.postDelayed({ ColorOsBatterySummaryInjector.patch(TAG, rewrite) { visible.get() > 0 } }, 1_200)
         }
         val onPause = Activity::class.java.getDeclaredMethod("onPause")
         hookBefore(onPause) {

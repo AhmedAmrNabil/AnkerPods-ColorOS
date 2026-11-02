@@ -49,12 +49,12 @@ private val freeBudsSe4AncOptions = listOf(
     HuaweiAncLevelOption(HuaweiAncLevel.DEEP, protocolValue = 0x02, miuiValue = 0x02),
 )
 
-/** Soundcore Liberty 4 NC (A3947)：自适应=0、轻度=1 (manual 1)、均衡=2 (manual 3)、深度=3 (manual 5)。 */
+/** Soundcore Liberty 4 NC (A3947)：自适应=3 (adaptive level 3)、手动=0、轻度=1、均衡=2、深度=5。 */
 private val soundcoreLiberty4NcAncOptions = listOf(
-    HuaweiAncLevelOption(HuaweiAncLevel.ADAPTIVE, protocolValue = 0, miuiValue = 3),
+    HuaweiAncLevelOption(HuaweiAncLevel.ADAPTIVE, protocolValue = 3, miuiValue = 3),
     HuaweiAncLevelOption(HuaweiAncLevel.LIGHT, protocolValue = 1, miuiValue = 1),
     HuaweiAncLevelOption(HuaweiAncLevel.BALANCED, protocolValue = 2, miuiValue = 0),
-    HuaweiAncLevelOption(HuaweiAncLevel.DEEP, protocolValue = 3, miuiValue = 2),
+    HuaweiAncLevelOption(HuaweiAncLevel.DEEP, protocolValue = 5, miuiValue = 2),
 )
 
 internal val HuaweiDeviceRoute.ancLevelOptions: List<HuaweiAncLevelOption>
@@ -73,13 +73,16 @@ internal val HuaweiDeviceRoute.ancLevelOptions: List<HuaweiAncLevelOption>
         HuaweiDeviceRoute.HUAWEI_FREEBUDS7I,
         -> pro3AndFreeBuds7iAncOptions
         HuaweiDeviceRoute.HUAWEI_FREEBUDS_PRO5 -> freeBudsPro5AncOptions
-        HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC -> soundcoreLiberty4NcAncOptions
         else -> emptyList()
     }
 
 internal val HuaweiDeviceRoute.defaultAncSubMode: Int?
-    get() = ancLevelOptions.firstOrNull { it.level == HuaweiAncLevel.ADAPTIVE }?.protocolValue
-        ?: ancLevelOptions.firstOrNull()?.protocolValue
+    get() = if (this == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+        3
+    } else {
+        ancLevelOptions.firstOrNull { it.level == HuaweiAncLevel.ADAPTIVE }?.protocolValue
+            ?: ancLevelOptions.firstOrNull()?.protocolValue
+    }
 
 internal fun HuaweiDeviceRoute.ancLevelOptionForProtocolValue(value: Int): HuaweiAncLevelOption? =
     ancLevelOptions.firstOrNull { it.protocolValue == value }
@@ -91,7 +94,11 @@ internal fun HuaweiDeviceRoute.miuiLevelForAncSubMode(value: Int): Int? =
     ancLevelOptionForProtocolValue(value)?.miuiValue
 
 internal fun HuaweiDeviceRoute.supportsAncSubMode(value: Int): Boolean =
-    ancLevelOptionForProtocolValue(value) != null
+    if (this == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+        value in 0..5
+    } else {
+        ancLevelOptionForProtocolValue(value) != null
+    }
 
 /**
  * 通透子模式同样按机型隔离。Pro 5 抓包确认 02=通透、01=透传人声、04=智慧动态透传；

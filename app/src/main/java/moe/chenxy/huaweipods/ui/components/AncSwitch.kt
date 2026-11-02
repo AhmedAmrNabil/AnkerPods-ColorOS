@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -40,8 +41,10 @@ import moe.chenxy.huaweipods.pods.ancLevelOptions
 import moe.chenxy.huaweipods.pods.isNoiseCancellation
 import moe.chenxy.huaweipods.pods.supportsAncDirectionDial
 import moe.chenxy.huaweipods.pods.supportsDiscreteAncLevels
+import moe.chenxy.huaweipods.pods.supportsSoundcoreAnc
 import moe.chenxy.huaweipods.pods.supportsTransparency
 import moe.chenxy.huaweipods.pods.defaultTransparencySubMode
+import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.SinkFeedback
@@ -92,6 +95,17 @@ fun AncSwitch(
         }
 
         if (
+            ancStatus.isNoiseCancellation() &&
+            onHuaweiAncLevelChange != null &&
+            deviceRoute.supportsSoundcoreAnc
+        ) {
+            SoundcoreAncSelector(
+                subMode = huaweiAncLevel,
+                onSubModeChange = onHuaweiAncLevelChange,
+                compact = compact,
+                modifier = Modifier.padding(top = if (compact) 8.dp else 14.dp),
+            )
+        } else if (
             ancStatus.isNoiseCancellation() &&
             onHuaweiAncLevelChange != null &&
             deviceRoute.supportsDiscreteAncLevels
@@ -196,6 +210,136 @@ private fun HuaweiNoiseControlSelector(
                 compact = compact,
                 modifier = Modifier.weight(1f),
             )
+        }
+    }
+}
+
+@Composable
+private fun SoundcoreAncSelector(
+    subMode: Int,
+    onSubModeChange: (Int) -> Unit,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val isAdaptive = subMode in 1..5
+    var savedAdaptiveLevel by remember { mutableIntStateOf(if (isAdaptive) subMode else 3) }
+    var sliderFloat by remember { mutableFloatStateOf((if (isAdaptive) subMode else 3).toFloat()) }
+
+    LaunchedEffect(subMode) {
+        if (subMode in 1..5) {
+            savedAdaptiveLevel = subMode
+            sliderFloat = subMode.toFloat()
+        }
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.anc_level_title),
+            fontSize = if (compact) 13.sp else 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = MiuixTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+            modifier = Modifier.padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 4.dp),
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp),
+        ) {
+            HuaweiAncChoice(
+                label = stringResource(R.string.soundcore_anc_mode_manual),
+                selected = !isAdaptive,
+                onClick = { onSubModeChange(0) },
+                compact = compact,
+                modifier = Modifier.weight(1f),
+            )
+            HuaweiAncChoice(
+                label = stringResource(R.string.soundcore_anc_mode_adaptive),
+                selected = isAdaptive,
+                onClick = {
+                    sliderFloat = savedAdaptiveLevel.toFloat()
+                    onSubModeChange(savedAdaptiveLevel)
+                },
+                compact = compact,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        if (isAdaptive) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = if (compact) 12.dp else 16.dp,
+                        end = if (compact) 12.dp else 16.dp,
+                        top = if (compact) 8.dp else 12.dp,
+                    )
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.soundcore_anc_adaptive_level),
+                        fontSize = if (compact) 12.sp else 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = MiuixTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                    )
+                    Text(
+                        text = stringResource(R.string.soundcore_anc_level, savedAdaptiveLevel),
+                        fontSize = if (compact) 12.sp else 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MiuixTheme.colorScheme.primary,
+                    )
+                }
+
+                Slider(
+                    value = sliderFloat,
+                    onValueChange = { newFloat ->
+                        sliderFloat = newFloat
+                        val rounded = newFloat.roundToInt().coerceIn(1, 5)
+                        if (rounded != savedAdaptiveLevel) {
+                            savedAdaptiveLevel = rounded
+                            onSubModeChange(rounded)
+                        }
+                    },
+                    onValueChangeFinished = {
+                        val rounded = sliderFloat.roundToInt().coerceIn(1, 5)
+                        sliderFloat = rounded.toFloat()
+                        if (rounded != savedAdaptiveLevel) {
+                            savedAdaptiveLevel = rounded
+                            onSubModeChange(rounded)
+                        }
+                    },
+                    valueRange = 1f..5f,
+                    steps = 3,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    for (i in 1..5) {
+                        Text(
+                            text = i.toString(),
+                            fontSize = if (compact) 11.sp else 12.sp,
+                            fontWeight = if (savedAdaptiveLevel == i) FontWeight.Bold else FontWeight.Normal,
+                            color = if (savedAdaptiveLevel == i) {
+                                MiuixTheme.colorScheme.primary
+                            } else {
+                                MiuixTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }

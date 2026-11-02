@@ -73,6 +73,7 @@ import moe.chenxy.huaweipods.pods.supportsAncDirectionDial
 import moe.chenxy.huaweipods.pods.supportsAncStateReadback
 import moe.chenxy.huaweipods.pods.supportsAncSubMode
 import moe.chenxy.huaweipods.pods.supportsDiscreteAncLevels
+import moe.chenxy.huaweipods.pods.supportsSoundcoreAnc
 import moe.chenxy.huaweipods.pods.supportsTransparency
 import moe.chenxy.huaweipods.pods.transparencySubModes
 import moe.chenxy.huaweipods.ui.dialogs.AvailableUpdateDialog
@@ -492,7 +493,7 @@ internal fun MainUI(
                         val level = intent.getIntExtra("level", huaweiAncLevel.value)
                         when {
                             route.supportsAncDirectionDial -> huaweiAncLevel.value = level.coerceIn(0, 8)
-                            route.supportsDiscreteAncLevels && route.supportsAncSubMode(level) -> {
+                            (route.supportsDiscreteAncLevels || route.supportsSoundcoreAnc) && route.supportsAncSubMode(level) -> {
                                 huaweiAncLevel.value = level
                                 hasHuaweiAncLevel.value = true
                             }
@@ -768,12 +769,12 @@ internal fun MainUI(
                 putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it)
             }
             putExtra("status", normalizedMode.broadcastStatus)
-            if (route.supportsDiscreteAncLevels || normalizedMode == NoiseControlMode.TRANSPARENCY && route.supportsTransparency) {
+            if (route.supportsDiscreteAncLevels || route.supportsSoundcoreAnc || normalizedMode == NoiseControlMode.TRANSPARENCY && route.supportsTransparency) {
                 val subMode = when (normalizedMode) {
                     NoiseControlMode.NOISE_CANCELLATION ->
                         huaweiAncLevel.value.takeIf {
                             hasHuaweiAncLevel.value && route.supportsAncSubMode(it)
-                        }
+                        } ?: (if (route.supportsSoundcoreAnc) 3 else null)
                     NoiseControlMode.TRANSPARENCY -> {
                         huaweiTransparencySubMode.value
                             .takeIf { it in supportedTransparencySubModes(route) }
@@ -794,7 +795,7 @@ internal fun MainUI(
         val route = currentDeviceRoute()
         val safeLevel = when {
             route.supportsAncDirectionDial -> level.coerceIn(0, 8)
-            route.supportsDiscreteAncLevels && ancMode.value == NoiseControlMode.NOISE_CANCELLATION ->
+            (route.supportsDiscreteAncLevels || route.supportsSoundcoreAnc) && ancMode.value == NoiseControlMode.NOISE_CANCELLATION ->
                 level.takeIf(route::supportsAncSubMode) ?: return
             route.supportsTransparency && ancMode.value == NoiseControlMode.TRANSPARENCY ->
                 level.takeIf { it in supportedTransparencySubModes(route) } ?: return

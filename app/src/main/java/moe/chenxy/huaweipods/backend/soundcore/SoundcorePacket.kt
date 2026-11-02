@@ -91,11 +91,17 @@ object SoundcorePacket {
         val body = when (mode) {
             NoiseControlMode.NOISE_CANCELLATION -> {
                 when (subMode) {
-                    0 -> byteArrayOf(0x00, 0x50.toByte(), 0x01, 0x01, 0x01, 0x01, 0x00) // Adaptive
-                    1 -> byteArrayOf(0x00, 0x10, 0x01, 0x00, 0x01, 0x01, 0x03) // Light (manual 1)
-                    2 -> byteArrayOf(0x00, 0x30, 0x01, 0x00, 0x01, 0x01, 0x03) // Balanced (manual 3)
-                    3 -> byteArrayOf(0x00, 0x50.toByte(), 0x01, 0x00, 0x01, 0x01, 0x03) // Deep (manual 5)
-                    else -> byteArrayOf(0x00, 0x50.toByte(), 0x01, 0x00, 0x01, 0x01, 0x03) // Default to manual deep
+                    0 -> byteArrayOf(0x00, 0x50.toByte(), 0x01, 0x00, 0x01, 0x01, 0x03) // Manual (nc_mode = 0, manual = 5)
+                    in 1..5 -> byteArrayOf(
+                        0x00,
+                        ((0x5 shl 4) or subMode!!).toByte(),
+                        0x01,
+                        0x01, // Adaptive (nc_mode = 1, adaptive = subMode)
+                        0x01,
+                        0x01,
+                        0x00
+                    )
+                    else -> byteArrayOf(0x00, 0x53.toByte(), 0x01, 0x01, 0x01, 0x01, 0x00) // Default Adaptive 3
                 }
             }
             NoiseControlMode.TRANSPARENCY -> byteArrayOf(
@@ -241,15 +247,11 @@ object SoundcorePacket {
             }
             if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 129) {
                 val ncMode = body[129].toInt() and 0xFF
-                if (ncMode == 1) {
-                    ancSubMode = 0 // Adaptive
+                if (ncMode == 0) {
+                    ancSubMode = 0 // Manual
                 } else {
-                    val manual = (body[127].toInt() and 0xF0) ushr 4
-                    ancSubMode = when {
-                        manual <= 2 -> 1 // Light
-                        manual <= 4 -> 2 // Balanced
-                        else -> 3 // Deep
-                    }
+                    val adaptive = body[127].toInt() and 0x0F
+                    ancSubMode = if (adaptive in 1..5) adaptive else 3 // Adaptive
                 }
             }
         }
@@ -323,15 +325,11 @@ object SoundcorePacket {
         }
         val subMode = if (mode == NoiseControlMode.NOISE_CANCELLATION && body.size > 3) {
             val ncMode = body[3].toInt() and 0xFF
-            if (ncMode == 1) {
-                0 // Adaptive
+            if (ncMode == 0) {
+                0 // Manual
             } else {
-                val manual = (body[1].toInt() and 0xF0) ushr 4
-                when {
-                    manual <= 2 -> 1 // Light
-                    manual <= 4 -> 2 // Balanced
-                    else -> 3 // Deep
-                }
+                val adaptive = body[1].toInt() and 0x0F
+                if (adaptive in 1..5) adaptive else 3 // Adaptive
             }
         } else null
         return SoundcoreSoundModes(mode, subMode)

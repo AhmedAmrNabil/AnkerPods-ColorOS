@@ -2,7 +2,7 @@
   description = "Dev shell and build targets for the Soundcore ColorOS LSPosed module";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/a7868a727837f3c09cee2ce0ca671c76b1589fed";
+    nixpkgs.url = "github:nixos/nixpkgs/1c89083e451e891152365b799595cf7790a43325";
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
   };

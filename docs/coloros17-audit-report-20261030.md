@@ -210,3 +210,63 @@ Device Space view dump cards=0 classes=[
   发布、恢复、清理三段都走到了。
 - **`module resources unavailable` 本轮没复现**：整套新日志里一条都没有，模块资源在干净进程里可用；
   之前那次是"覆盖安装 + 宿主进程复用旧句柄"导致的，重启宿主即恢复（§5 第 6 条）。
+
+## 9. 首页卡片三段电量：视图级注入（已实现并真机验证）
+
+§8 的结论是"首页卡片不走 DTO、不建 `BlueToothCardView`、Lottie 电量也不是能挂的构造点"。
+这一轮换打法：不去改宿主数据，**自己往卡片里补一行文本**。
+
+### 9.1 卡片真实结构（`Device Space card tree` 日志）
+
+把探针改成挂在 `BatteryLottieView` 的**父容器**上之后（构造钩子始终不触发，改成在电量遍历时按类名找实例），
+一次就拿到了首页卡片内部结构：
+
+```
+L0 LinearLayout#singleBatteryContainer: BatteryLottieView#batteryView  TextView#batteryText="73"
+L1 LinearLayout#textContainer: TextView#deviceName="OPPO Pad Mini"
+                               LinearLayout#statusContainer(2)
+                               LinearLayout#singleBatteryContainer(2)
+                               LinearLayout#batteryInfoContainer(5)
+L2 FrameLayout#bottomContainer: LinearLayout#textContainer(4)
+L3 LinearLayout#-: FrameLayout#topContainer(3)  FrameLayout#bottomContainer(1)
+L4 un#-: LinearLayout#-(2)
+```
+
+关键三条：
+- 电量数字 **是** `TextView#batteryText`（不是 Lottie 文本层），
+- 它和 `BatteryLottieView#batteryView` 同属 `LinearLayout#singleBatteryContainer`，
+- 设备名是 `TextView#deviceName`，卡片上没有 MAC。
+
+### 9.2 实现
+
+| 文件 | 作用 |
+| --- | --- |
+| `hook/ColorOsHomeCardBattery.kt` | 纯逻辑：`textFor(left,right,case)` 拼 `L100 R100 C100`；`matches(cardName,podName)` 规范化后双向包含匹配 |
+| `hook/ColorOsPodBatteryStore.kt` | `ColorOsPodBattery` 增加 `name`（广播 `device_name`）；新增 `snapshot()` |
+| `hook/ColorOsDeviceSpaceHook.kt` | 电量刷新时遍历窗口，命中 `BatteryLottieView` → 找到 `HomeCardView` → 读 `deviceName` → 配对 → 在 `singleBatteryContainer` 里插入 `TextView`，并把宿主 `batteryText` 收起 |
+
+行为约定：
+- **只有一段电量时不显示**（宿主已经画了那个数字，多一行没意义）；≥2 段才挂。
+- **配不上名字就什么都不做**，绝不让别的设备电量落到耳机卡上。
+- 浮层文本用单字母标签 `L/R/C`：真机上中文标签 `左 100 · 右 100 · 盒 100` 会被截断成 `盒 100 …`，
+  换成 `L100 R100 C100` 一行正好放下。
+- 任一耳机低于 `ColorOsAirpodsBatteryBlock.LOW_THRESHOLD` 时浮层标红，补上被收起的 `batteryText` 丢失的低电提示。
+- 只在 `singleBatteryContainer` 是 `LinearLayout` 时插入，别的布局一律不动（记一条 `home overlay skipped` 日志）。
+
+### 9.3 真机结果
+
+`huaweipods_multi_battery=2`（卡片位）时，FreeClip 卡片底部由 `▭ 100` 变成 `▭ L100 R100 C100`，
+电池图标保留、宿主单值数字收起；日志：
+
+```
+Device Space home overlay attached name=FreeClip text=L100 R100 C100
+Device Space DTO gate mask=2 storeHit=true left=100 right=100 case=100 address=30:A9:98:CB:C4:54
+```
+
+截图：`.local/recon/verify2-19-overlay.png`（最终形态）、`verify2-11-overlay.png`（未收数字时的对比）。
+
+### 9.4 开关与回退
+
+`Settings.Global huaweipods_multi_battery` 或 App 内「设备空间三段电量（实验）」开关；
+关掉后下一轮电量刷新就把浮层 `GONE`、把宿主 `batteryText` 恢复 `VISIBLE`，不需要重启宿主。
+默认仍是**关**。

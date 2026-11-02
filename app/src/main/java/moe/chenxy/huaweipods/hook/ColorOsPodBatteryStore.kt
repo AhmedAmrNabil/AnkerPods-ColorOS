@@ -17,6 +17,8 @@ internal data class ColorOsPodBattery(
     val rightConnected: Boolean,
     val case: Int,
     val caseConnected: Boolean,
+    /** 广播里的 `device_name`，首页卡片靠它跟卡上的设备名配对（卡片上没有地址）。 */
+    val name: String? = null,
 )
 
 /** 卡片的一段电量；[channel] 取 `BatteryType` 的常量名（LEFT / RIGHT / BOX）。 */
@@ -97,4 +99,7 @@ internal object ColorOsPodBatteryStore {
     }
 
     fun size(): Int = entries.size
+
+    /** 当前所有在线耳机的快照，首页卡片浮层靠设备名匹配（卡片上没有地址）。 */
+    fun snapshot(): List<ColorOsPodBattery> = entries.values.toList()
 }

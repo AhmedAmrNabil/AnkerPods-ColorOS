@@ -13,10 +13,12 @@ import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
 import android.util.LruCache
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewStub
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import java.lang.ref.WeakReference
@@ -45,6 +47,13 @@ object ColorOsDeviceSpaceHook : HookContext() {
     private const val DEVICE = "com.oplus.mydevices.domain.ports.device.IDevice"
     private const val DETAIL_ACTIVITY = "com.oplus.mydevices.bluetooth.PluginPanelHostActivity"
 private const val HOME_CARD_BATTERY = "com.oplus.mydevices.quickapp.homecard.view.BatteryLottieView"
+private const val HOME_CARD = "com.oplus.mydevices.deviceui.devicecard.view.homecard.HomeCardView"
+
+/** 首页卡片三段浮层的标记，用来在复用/重绑时找回自己插的那个 TextView。 */
+private const val HOME_CARD_OVERLAY_TAG = "huaweipods_battery_overlay"
+
+/** 低电时浮层的颜色（宿主那份 Lottie 被收起后，低电提示由我们自己给）。 */
+private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
     private val main = Handler(Looper.getMainLooper())
     private val requests = DeviceSpaceImageRequests<ImageView>()
     private val images = WeakHashMap<ImageView, OriginalImage>()
@@ -80,6 +89,7 @@ private const val HOME_CARD_BATTERY = "com.oplus.mydevices.quickapp.homecard.vie
     @Volatile private var lastModeSignature: String? = null
     @Volatile private var viewDumped = false
     @Volatile private var cardTreeDumped = false
+    private val overlaySkipLogged = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private fun viewDumpDone(): Boolean = viewDumped
 
@@ -188,6 +198,7 @@ private const val HOME_CARD_BATTERY = "com.oplus.mydevices.quickapp.homecard.vie
                             rightConnected = intent.getBooleanExtra("right_connected", false),
                             case = intent.getIntExtra("case_battery", 0),
                             caseConnected = intent.getBooleanExtra("case_connected", false),
+                            name = intent.getStringExtra("device_name")?.takeIf(String::isNotBlank),
                         )
                         ColorOsPodBatteryStore.put(pod)
                         val signature = "$target left=${pod.left}/${pod.leftConnected} " +
@@ -514,6 +525,132 @@ private const val HOME_CARD_BATTERY = "com.oplus.mydevices.quickapp.homecard.vie
         main.post { refreshVisibleDetails() }
     }
 
+    /**
+     * 首页卡片三段电量浮层。
+     *
+     * 卡片里能拿到的只有设备名（没有地址），所以用"卡片名 ↔ 广播里的 device_name"做规范化包含匹配
+     * （[ColorOsHomeCardBattery.matches]），配不上就什么都不画 —— 宁可不显示，也不能把别的设备电量写上去。
+     *
+     * 插在 `BatteryLottieView` 同一个父容器里、紧跟它后面：父容器是 `LinearLayout` 才动手，
+     * 别的布局插进去会挤坏宿主排版，所以只在 `LinearLayout` 上做，并且只记一次日志说明跳过了什么。
+     */
+    private fun applyHomeCardBattery(anchor: View) {
+        if (!cardBatteryEnabled()) return
+        val card = homeCardAncestor(anchor) ?: return
+        val nameText = homeCardNameText(card)
+        val pod = ColorOsPodBatteryStore.snapshot().firstOrNull {
+            ColorOsHomeCardBattery.matches(nameText, it.name)
+        }
+        val triple = colorOsBatteryTriple(pod)
+        val text = triple?.let { ColorOsHomeCardBattery.textFor(it.left, it.right, it.case) }
+        val parent = anchor.parent as? ViewGroup ?: return
+        val existing = parent.findViewWithTag<View>(HOME_CARD_OVERLAY_TAG)
+        // 真机卡片结构（`Device Space card tree`）：singleBatteryContainer(LinearLayout)
+        //   = batteryView(BatteryLottieView) + batteryText(TextView="100")
+        // 只收宿主那个数字，保留 Lottie 电池图标。
+        val hostNumber = homeCardBatteryText(parent, anchor)
+        if (text == null) {
+            existing?.visibility = View.GONE
+            hostNumber?.visibility = View.VISIBLE
+            return
+        }
+        if (existing is TextView) {
+            if (existing.text?.toString() != text) existing.text = text
+            existing.visibility = View.VISIBLE
+            applyOverlayColor(existing, card, triple)
+            hostNumber?.visibility = View.GONE
+            return
+        }
+        if (parent !is LinearLayout) {
+            if (overlaySkipLogged.compareAndSet(false, true)) {
+                Log.i(TAG, "Device Space home overlay skipped parent=${parent.javaClass.name} text=$text")
+            }
+            return
+        }
+        val label = TextView(anchor.context).apply {
+            tag = HOME_CARD_OVERLAY_TAG
+            this.text = text
+            textSize = 11f
+            isSingleLine = true
+            maxLines = 1
+            setPadding(6, 0, 0, 0)
+        }
+        applyOverlayColor(label, card, triple)
+        parent.addView(
+            label,
+            parent.indexOfChild(anchor) + 1,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { gravity = Gravity.CENTER_VERTICAL },
+        )
+        anchor.visibility = View.VISIBLE
+        hostNumber?.visibility = View.GONE
+        Log.i(TAG, "Device Space home overlay attached name=$nameText text=$text")
+    }
+
+    /** 宿主自己那个纯数字电量文本（`batteryText`，内容形如 `100`），浮层显示时收起来。 */
+    private fun homeCardBatteryText(parent: ViewGroup, anchor: View): TextView? {
+        for (index in 0 until parent.childCount) {
+            val child = parent.getChildAt(index)
+            if (child === anchor || child.tag == HOME_CARD_OVERLAY_TAG) continue
+            if (child !is TextView) continue
+            val raw = child.text?.toString()?.trim().orEmpty()
+            if (raw.isNotEmpty() && raw.all { it.isDigit() }) return child
+        }
+        return null
+    }
+
+    /** 任一耳机低于阈值就把浮层标红，顶掉被收起来的 Lottie 低电配色。 */
+    private fun applyOverlayColor(label: TextView, card: ViewGroup, triple: ColorOsBatteryTriple?) {
+        val low = triple != null && triple.minimum < ColorOsAirpodsBatteryBlock.LOW_THRESHOLD
+        label.setTextColor(if (low) LOW_BATTERY_COLOR else homeCardTextColor(card))
+    }
+
+    private fun homeCardAncestor(anchor: View): ViewGroup? {
+        var node: View? = anchor
+        repeat(8) {
+            node = node?.parent as? View
+            val current = node ?: return null
+            if (current.javaClass.name == HOME_CARD) return current as? ViewGroup
+        }
+        return null
+    }
+
+    /** 卡片里第一个"像设备名"的文本：含字母、长度 ≥ 2，避开电量数字。 */
+    private fun homeCardNameText(card: ViewGroup): String? {
+        val pending = ArrayDeque<View>()
+        pending.add(card)
+        var visited = 0
+        while (pending.isNotEmpty() && visited++ < 128) {
+            val view = pending.removeFirst()
+            if (view === card) {
+                // 容器本身不取
+            } else if (view is TextView) {
+                val raw = view.text?.toString()?.trim().orEmpty()
+                if (raw.length >= 2 && raw.any { it.isLetter() }) return raw
+            }
+            if (view is ViewGroup) {
+                repeat(view.childCount) { index -> pending.add(view.getChildAt(index)) }
+            }
+        }
+        return null
+    }
+
+    private fun homeCardTextColor(card: ViewGroup): Int {
+        val pending = ArrayDeque<View>()
+        pending.add(card)
+        var visited = 0
+        while (pending.isNotEmpty() && visited++ < 128) {
+            val view = pending.removeFirst()
+            if (view is TextView && view.tag != HOME_CARD_OVERLAY_TAG) return view.currentTextColor
+            if (view is ViewGroup) {
+                repeat(view.childCount) { index -> pending.add(view.getChildAt(index)) }
+            }
+        }
+        return 0xFF999999.toInt()
+    }
+
     private fun refreshVisibleDetails() {
         if (stopped) return
         runCatching {
@@ -556,6 +693,8 @@ private const val HOME_CARD_BATTERY = "com.oplus.mydevices.quickapp.homecard.vie
                         cards++
                         applyCardBatteryMode(view, shape)
                     }
+                    // 首页卡片：宿主只画一个 Lottie 数字，三段靠自己挂一行文本（见 ColorOsHomeCardBattery）。
+                    if (view.javaClass.name == HOME_CARD_BATTERY) applyHomeCardBattery(view)
                     if (view is ViewGroup) {
                         repeat(minOf(view.childCount, (512 - visited - pending.size).coerceAtLeast(0))) { index ->
                             pending.add(view.getChildAt(index))

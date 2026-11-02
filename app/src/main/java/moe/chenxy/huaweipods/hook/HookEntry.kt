@@ -54,6 +54,7 @@ open class HookEntry : XposedModule() {
                     loadHook("bluetooth-hfp-battery", HuaweiHfpBatteryAtHook(), classLoader, packageName)
                     // ColorOS 没有独立的蓝牙 UI 进程，连接弹窗、常驻通知与流体云都由系统蓝牙进程发起。
                     loadHook("bluetooth-notification", MiBluetoothToastHook, classLoader, packageName)
+                    loadHook("coloros-bluetooth-enhancer", ColorOsBluetoothEnhancerHook, classLoader, packageName)
                 }
                 "com.heytap.mydevices" -> {
                     loadHook("coloros-mydevices", ColorOsMyDevicesHook, classLoader, packageName)

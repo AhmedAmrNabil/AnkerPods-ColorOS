@@ -151,6 +151,7 @@
     <string name="restart_scope_my_devices">My Devices (ColorOS headset detail)</string>
     <string name="restart_scope_quick_connect">Quick Device Connect (ColorOS popup)</string>
     <string name="restart_scope_wireless_settings">Bluetooth settings (ColorOS earphone entry)</string>
+    <string name="restart_scope_android_settings">System settings (Bluetooth device details)</string>
     <string name="documentation_title">Documentation</string>
     <string name="documentation_load_failed">Documentation is unavailable</string>
     <string name="documentation_load_failed_summary">Check your connection and retry. Site pages stay in the app, while external links open in your browser.</string>

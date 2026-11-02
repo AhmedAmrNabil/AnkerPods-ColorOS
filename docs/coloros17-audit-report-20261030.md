@@ -417,3 +417,38 @@ HUAWEI FreeClip
 要补三段需要在 `com.android.settings` 作用域里做同样的文本层改写（现有
 `ColorOsSettingsBatteryText.rewrite` 认的是 `左/右/盒` 标记，这一页是纯数字，需要扩展识别规则）。
 列入下一轮候选，未改动代码。
+### 9.11 蓝牙「设备详细信息」页：从单值到三段（代码已就绪，待装机验证）
+
+§9.10 记的那个缺口这轮补了代码。
+
+**目标页面**：`com.android.settings/.Settings$BluetoothDeviceDetailActivity`，原文
+
+```
+HUAWEI FreeClip
+已开启。电量：98%。
+```
+
+**改动**
+
+| 位置 | 内容 |
+| --- | --- |
+| `ColorOsBatterySummaryInjector`（新） | 把原来写在 `ColorOsWirelessSettingsHook` 里的"收广播 → 扫窗口 → 改写文本"抽成公共件，两处宿主共用 |
+| `ColorOsSettingsBatteryText.rewriteSingleValue`（新） | 单值规则：冒号后只有一个百分比就换成三段，尾部句号原样保留；不足两段或不是单值一律返回 `null` |
+| `ColorOsDeviceDetailBatteryHook`（新） | `com.android.settings` 进程里的 hook；**只在 `BluetoothDeviceDetail*` Activity 处于前台时**才改写窗口文本 |
+| `HookEntry` | 新增 `com.android.settings` 分支与 `supportsPackage` 白名单 |
+| 模块 UI | 「重启作用域」新增「系统设置（蓝牙设备详细信息页）」 |
+
+**为什么加"仅前台"这道闸**：`com.android.settings` 同时管着手机自己的电池页，
+那些页面的「电量：xx%」是手机电量，拿耳机数据覆盖会出事故。所以 `onResume`/`onPause`
+对详细信息页计数，注入器只在计数 > 0 时工作。
+
+**验证方式（需要设备 + 一步手工配置）**
+
+1. 在 LSPosed 里给本模块勾选新作用域 **系统设置（`com.android.settings`）**；
+2. 模块「重启作用域」→ 勾上「系统设置」→ 重启（或手工 `am force-stop com.android.settings`）；
+3. 设置 → 蓝牙 → 点 HUAWEI FreeClip 的 ⓘ，期望看到
+   `已开启。电量： 左 97%，右 98%，盒 100%。`；
+4. 日志关键字：`HuaweiPods-ColorOsDeviceDetail`、`battery summary patched rows=`。
+
+**当前状态**：单测 694 通过 / 0 失败，Lint 0 error，Release 通过，APK `8f04a5c7…2906`。
+真机未验证——写这段时代码只过了构建与单测，设备不在手边。

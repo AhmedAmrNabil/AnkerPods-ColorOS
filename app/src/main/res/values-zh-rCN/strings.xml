@@ -152,6 +152,7 @@
     <string name="restart_scope_my_devices">我的设备（ColorOS 耳机详情）</string>
     <string name="restart_scope_quick_connect">快速设备连接（ColorOS 官方弹窗）</string>
     <string name="restart_scope_wireless_settings">蓝牙设置（ColorOS 耳机设置入口）</string>
+    <string name="restart_scope_android_settings">系统设置（蓝牙设备详细信息页）</string>
     <string name="documentation_title">使用文档</string>
     <string name="documentation_load_failed">文档暂时无法加载</string>
     <string name="documentation_load_failed_summary">请检查网络后重试。站内内容会留在 App 中，外部链接仍由系统浏览器打开。</string>

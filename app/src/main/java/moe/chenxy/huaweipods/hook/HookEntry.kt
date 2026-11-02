@@ -61,6 +61,9 @@ open class HookEntry : XposedModule() {
                 }
                 "com.heytap.accessory" ->
                     loadHook("coloros-accessory", ColorOsAccessoryFrameworkHook, classLoader, packageName)
+                "com.android.settings" ->
+                    // ColorOS 把设备详细信息页留在 AOSP Settings：那一页只有单值电量，需要单独补三段。
+                    loadHook("android-settings-device-detail", ColorOsDeviceDetailBatteryHook, classLoader, packageName)
                 "com.oplus.wirelesssettings" ->
                     loadHook("coloros-wirelesssettings", ColorOsWirelessSettingsHook, classLoader, packageName)
             }
@@ -94,6 +97,7 @@ open class HookEntry : XposedModule() {
             packageName == "com.heytap.mydevices" ||
             packageName == "com.heytap.accessory" ||
             packageName == "com.oplus.wirelesssettings" ||
+            packageName == "com.android.settings" ||
             BuildVariantHooks.supportsPackage(packageName)
 
     internal fun loadHook(

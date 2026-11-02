@@ -68,4 +68,46 @@ class ColorOsSettingsBatteryTextTest {
             ColorOsSettingsBatteryText.rewrite("使用中，电量：左 120%，右 -5%", 120, -5, null),
         )
     }
+
+    @Test
+    fun `expands the single value shown by the device detail page`() {
+        assertEquals(
+            "已开启。电量： 左 97%，右 98%，盒 100%。",
+            ColorOsSettingsBatteryText.rewriteSingleValue(
+                "已开启。电量：98%。",
+                ColorOsBatteryTriple(left = 97, right = 98, case = 100),
+            ),
+        )
+    }
+
+    @Test
+    fun `single value keeps the ascii period`() {
+        assertEquals(
+            "已开启。电量： 左 97%，右 98%.",
+            ColorOsSettingsBatteryText.rewriteSingleValue(
+                "已开启。电量：98%.",
+                ColorOsBatteryTriple(left = 97, right = 98, case = null),
+            ),
+        )
+    }
+
+    @Test
+    fun `single value needs at least two parts`() {
+        assertNull(
+            ColorOsSettingsBatteryText.rewriteSingleValue(
+                "已开启。电量：98%。",
+                ColorOsBatteryTriple(left = 97, right = null, case = null),
+            ),
+        )
+        assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("已开启。电量：98%。", null))
+    }
+
+    @Test
+    fun `single value ignores text that is not a lone percentage`() {
+        val triple = ColorOsBatteryTriple(left = 97, right = 98, case = 100)
+        assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("已开启。电量：左 97%，右 98%", triple))
+        assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("已开启。", triple))
+        assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("电量：98% 已连接", triple))
+        assertNull(ColorOsSettingsBatteryText.rewriteSingleValue(null, triple))
+    }
 }

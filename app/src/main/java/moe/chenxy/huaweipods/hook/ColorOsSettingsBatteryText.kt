@@ -39,8 +39,16 @@ internal object ColorOsSettingsBatteryText {
         return rewritten.takeIf { it != raw }
     }
 
-    /** `电量：98%。` 里那个单值（AOSP Settings 的设备详细信息页）。 */
+    /** `电量：98%。` 里那个单值（AOSP Settings 的设备详细信息页 / 已连接的设备列表）。 */
     private val SINGLE_VALUE = Regex("""^\s*(\d{1,3})\s*%\s*([。.]?)\s*$""")
+
+    /**
+     * 冒号前必须带连接态，才认成耳机摘要。
+     *
+     * 手机自己的电池页写的是 `电量：85%`，没有 `已开启/已连接` 这类前缀；加这条约束之后，
+     * 单值改写可以安全地作用于整个 `com.android.settings` 进程，不必再靠 Activity 类名兜着。
+     */
+    private val CONNECTION_MARKERS = listOf("已开启", "已连接", "已配对", "已关闭", "已断开", "Connected", "On", "Off")
 
     /**
      * 蓝牙「设备详细信息」页（`com.android.settings`）只有 `已开启。电量：98%。` 这种单值文本，
@@ -53,6 +61,8 @@ internal object ColorOsSettingsBatteryText {
         if (raw.isEmpty() || triple == null) return null
         val separator = raw.indexOfAny(charArrayOf('：', ':'))
         if (separator < 0 || separator == raw.lastIndex) return null
+        val prefix = raw.substring(0, separator)
+        if (CONNECTION_MARKERS.none { prefix.contains(it, ignoreCase = true) }) return null
         val match = SINGLE_VALUE.matchEntire(raw.substring(separator + 1)) ?: return null
         val parts = buildList {
             triple.left?.let { add("左 ${it.coerceIn(0, 100)}%") }

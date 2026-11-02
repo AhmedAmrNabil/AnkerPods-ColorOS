@@ -62,7 +62,6 @@ internal object ColorOsDeviceDetailBatteryHook : HookContext() {
     private fun hookSummarySetText() {
         val setText = TextView::class.java.getDeclaredMethod("setText", CharSequence::class.java)
         hookBefore(setText) {
-            if (visible.get() <= 0) return@hookBefore
             val text = args[0] as? CharSequence ?: return@hookBefore
             val triple = ColorOsBatterySummaryInjector.currentTriple() ?: return@hookBefore
             rewrite.apply(text, triple)?.let { proceedWithArgs(it) }

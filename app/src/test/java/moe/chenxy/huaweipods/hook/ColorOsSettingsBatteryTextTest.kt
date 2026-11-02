@@ -5,10 +5,10 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * 蓝牙设置行电量摘要改写：只在"认得出是电量行"时补盒子，其它文本一律不动。
+ * 宿主电量摘要改写：只在"认得出是电量摘要"时补段，其它文本一律不动。
  *
- * 真机原文是 `使用中，电量：左 100%，右 100%`；宿主没有盒子的格式化逻辑，
- * 所以这里要把三段拼回去，同时保证「蓝牙」「已连接」这类文本不被误改。
+ * - 列表行：真机原文 `使用中，电量：左 100%，右 100%`，宿主没有盒子的格式化逻辑。
+ * - 详细页：真机原文 `已开启。电量：98%。`，宿主只给单值。
  */
 class ColorOsSettingsBatteryTextTest {
 
@@ -109,5 +109,22 @@ class ColorOsSettingsBatteryTextTest {
         assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("已开启。", triple))
         assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("电量：98% 已连接", triple))
         assertNull(ColorOsSettingsBatteryText.rewriteSingleValue(null, triple))
+    }
+
+    @Test
+    fun `single value is ignored without a connection prefix`() {
+        // 手机自己的电池页就是这种形状，必须一个字符都不动。
+        val triple = ColorOsBatteryTriple(left = 88, right = 92, case = 100)
+        assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("电量：85%", triple))
+        assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("电池电量：85%。", triple))
+    }
+
+    @Test
+    fun `single value is rewritten for other connection prefixes`() {
+        val triple = ColorOsBatteryTriple(left = 88, right = 92, case = 100)
+        assertEquals(
+            "已连接。电量： 左 88%，右 92%，盒 100%。",
+            ColorOsSettingsBatteryText.rewriteSingleValue("已连接。电量：92%。", triple),
+        )
     }
 }

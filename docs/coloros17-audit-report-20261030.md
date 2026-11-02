@@ -348,3 +348,19 @@ Bluetooth settings battery summary patched rows=1 triple=ColorOsBatteryTriple(le
 `verify2-22-final.png`。两套主题都不需要单独配色分支。
 
 > 测试完把 `huaweipods_multi_battery` 复位为 `0`（关闭卡片浮层），夜间模式也已还原。
+### 9.7 低电标红：用强制阈值的验证构建拍到实图
+
+低电分支（`triple.minimum < LOW_THRESHOLD` → `LOW_BATTERY_COLOR = #FF5252`）之前只有代码路径，
+真机电池一直是 100%，没法自然触发。为把这条分支拍下来，做了一次**一次性验证构建**：
+
+- 临时把 `ColorOsAirpodsBatteryBlock.LOW_THRESHOLD` 从 `20` 改成 `101`，让 `minimum < 101` 恒成立；
+- 装机、开卡片位（`huaweipods_multi_battery=2`）、截图；
+- 立刻改回 `20` 重新构建、重装，确认文本恢复常规色。
+
+结果：`L100 R100 C100` 整段变红，旁边平板的普通 `94` 仍是灰色 —— 着色只作用于耳机卡片，
+且只在 `minimum` 低于阈值时生效。
+
+截图：`.local/recon/verify3-06-low-red.png`（红）、`verify3-07-shipping.png`（改回阈值后的常规色）。
+
+**发布版阈值仍是 20%**，与宿主 `*_low` 图标一致；这次改动没有留在仓库里
+（`git diff` 为空，验证构建仅为取证）。

@@ -54,6 +54,7 @@ private const val HOME_CARD_OVERLAY_TAG = "huaweipods_battery_overlay"
 
 /** 低电时浮层的颜色（宿主那份 Lottie 被收起后，低电提示由我们自己给）。 */
 private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
+
     private val main = Handler(Looper.getMainLooper())
     private val requests = DeviceSpaceImageRequests<ImageView>()
     private val images = WeakHashMap<ImageView, OriginalImage>()
@@ -89,6 +90,7 @@ private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
     @Volatile private var lastModeSignature: String? = null
     @Volatile private var viewDumped = false
     @Volatile private var cardTreeDumped = false
+    @Volatile private var cardFieldsProbed = false
     private val overlaySkipLogged = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private fun viewDumpDone(): Boolean = viewDumped
@@ -111,6 +113,45 @@ private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
             .onSuccess { Log.i(TAG, "Device Space home card layout probe installed") }
             .onFailure { Log.w(TAG, "Home card layout probe unavailable", it) }
     }
+
+    /** 一次性把卡片实例上的字符串字段打出来，用来确认地址藏在哪。 */
+    private fun homeCardFieldStrings(card: View): List<String> = runCatching {
+        card.javaClass.declaredFields
+            .filter { !java.lang.reflect.Modifier.isStatic(it.modifiers) }
+            .mapNotNull { field ->
+                runCatching {
+                    field.isAccessible = true
+                    val value = field.get(card)
+                    if (value is String && value.isNotBlank()) "${field.name}=$value" else null
+                }.getOrNull()
+            } + listOfNotNull((card.tag as? String)?.let { "tag=$it" })
+    }.getOrDefault(emptyList())
+
+    /**
+     * 卡片对应的耳机地址：卡片字段里存的是 `md5(大写 MAC)`（`HomeCardView.j` / `.s`），
+     * 所以拿仓库里每条地址算一遍 id 比对，命中就是它；纯字符串字段没有 id 时返回 null，调用方退回按名字配对。
+     */
+    private fun homeCardAddress(card: View): String? {
+        val values = homeCardFieldValues(card)
+        if (values.isEmpty()) return null
+        return ColorOsPodBatteryStore.snapshot().firstOrNull { pod ->
+            val id = ColorOsHomeCardBattery.deviceIdFor(pod.address) ?: return@firstOrNull false
+            values.any { it.equals(id, ignoreCase = true) }
+        }?.address
+    }
+
+    /** 卡片实例上的全部字符串字段值（`j`、`s` 这些混淆字段里就有设备 id）。 */
+    private fun homeCardFieldValues(card: View): List<String> = runCatching {
+        card.javaClass.declaredFields
+            .filter { !java.lang.reflect.Modifier.isStatic(it.modifiers) }
+            .mapNotNull { field ->
+                runCatching {
+                    field.isAccessible = true
+                    field.get(card) as? String
+                }.getOrNull()
+            }
+            .filter { it.isNotBlank() }
+    }.getOrDefault(emptyList())
 
     /**
      * 设备空间首页卡片是 `HomeCardView` + `BatteryLottieView`（Lottie 电量动画），
@@ -538,9 +579,12 @@ private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
         if (!cardBatteryEnabled()) return
         val card = homeCardAncestor(anchor) ?: return
         val nameText = homeCardNameText(card)
-        val pod = ColorOsPodBatteryStore.snapshot().firstOrNull {
-            ColorOsHomeCardBattery.matches(nameText, it.name)
-        }
+        val cardAddress = homeCardAddress(card)
+        // 优先按 MAC 配对；卡片上没有地址时退回按名字（同型号两只在线时可能配错，日志里会写清来源）。
+        val pod = ColorOsPodBatteryStore.get(cardAddress)
+            ?: ColorOsPodBatteryStore.snapshot().firstOrNull {
+                ColorOsHomeCardBattery.matches(nameText, it.name)
+            }
         val triple = colorOsBatteryTriple(pod)
         val text = triple?.let { ColorOsHomeCardBattery.textFor(it.left, it.right, it.case) }
         val parent = anchor.parent as? ViewGroup ?: return
@@ -586,7 +630,11 @@ private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
         )
         anchor.visibility = View.VISIBLE
         hostNumber?.visibility = View.GONE
-        Log.i(TAG, "Device Space home overlay attached name=$nameText text=$text")
+        Log.i(
+            TAG,
+            "Device Space home overlay attached name=$nameText address=${cardAddress ?: "-"} text=$text " +
+                "fields=${homeCardFieldStrings(card)}",
+        )
     }
 
     /** 宿主自己那个纯数字电量文本（`batteryText`，内容形如 `100`），浮层显示时收起来。 */

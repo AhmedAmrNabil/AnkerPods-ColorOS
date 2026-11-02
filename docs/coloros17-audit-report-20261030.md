@@ -270,3 +270,34 @@ Device Space DTO gate mask=2 storeHit=true left=100 right=100 case=100 address=3
 `Settings.Global huaweipods_multi_battery` 或 App 内「设备空间三段电量（实验）」开关；
 关掉后下一轮电量刷新就把浮层 `GONE`、把宿主 `batteryText` 恢复 `VISIBLE`，不需要重启宿主。
 默认仍是**关**。
+### 9.5 按地址配对：宿主用 `md5(大写 MAC)` 当设备 id
+
+名字配对有个硬伤：同型号两只耳机同时在线会串。这一节把它从根上解决。
+
+**卡片字段探针**（把字段扫进既有那条 `home overlay attached` 日志里，是唯一稳定打出来的位置）：
+
+```
+Device Space home overlay attached name=FreeClip address=- text=L100 R100 C100
+  fields=[j=f68a5d82181e48edd39eb1824f43c1fa, s=f68a5d82181e48edd39eb1824f43c1fa]
+```
+
+`j` / `s` 是同一串 32 位十六进制，不是 MAC。反查 `HomeCardView` 的 `u(QuickCardDeviceData)`：
+
+```
+invoke-virtual QuickCardDeviceData.getId()
+iput-object -> HomeCardView.s
+invoke-virtual HomeCardView.D(QuickCardDeviceData)
+```
+
+再对 `getId()` 试算：**`md5("30:A9:98:CB:C4:54") = f68a5d82181e48edd39eb1824f43c1fa`**，
+和卡片字段一字不差 —— 宿主确实用 `md5(大写的带冒号 MAC)` 当设备 id。
+
+于是配对改成：拿仓库里每条地址算一遍 id，和卡片字段比对，命中就是这台设备。
+
+```
+Device Space home overlay attached name=FreeClip address=30:A9:98:CB:C4:54 text=L100 R100 C100
+```
+
+- 按名字匹配保留为兜底（卡片字段里没有 id 的机型）。
+- 新增单测：`deviceIdFor` 真机向量、大小写/空格归一、空地址返回 null、`matchesDeviceId` 正反例。
+- 截图：`.local/recon/verify2-20-address-match.png`（浅色主题下的最终形态）。

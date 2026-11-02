@@ -1,5 +1,6 @@
 package moe.chenxy.huaweipods.hook
 
+import java.security.MessageDigest
 import java.util.Locale
 
 /**
@@ -37,7 +38,7 @@ internal object ColorOsHomeCardBattery {
     }
 
     /**
-     * 卡片和电量快照是否配对。
+     * 卡片和电量快照是否配对（按名字，保底用）。
      *
      * 卡片上只有设备名（`FreeClip`），广播里带的是完整名（`HUAWEI FreeClip`），
      * 所以做规范化后双向包含匹配；任何一边为空都不匹配，宁可少画也不要画错卡。
@@ -47,6 +48,30 @@ internal object ColorOsHomeCardBattery {
         val pod = normalize(podName)
         if (card.isEmpty() || pod.isEmpty()) return false
         return card.contains(pod) || pod.contains(card)
+    }
+
+    /**
+     * 卡片上的设备 id：宿主拿 **`md5(大写 MAC)`** 当 `QuickCardDeviceData.getId()`，
+     * `HomeCardView.j` / `.s` 两个字段存的就是它（真机实测
+     * `md5("30:A9:98:CB:C4:54") = f68a5d82181e48edd39eb1824f43c1fa`）。
+     *
+     * 有了这个就能按地址精确配对，同型号两只耳机同时在线也不会串。
+     */
+    fun deviceIdFor(address: String?): String? {
+        val normalized = address?.trim()?.uppercase(Locale.ROOT).orEmpty()
+        if (normalized.isEmpty()) return null
+        return runCatching {
+            MessageDigest.getInstance("MD5")
+                .digest(normalized.toByteArray(Charsets.UTF_8))
+                .joinToString("") { byte -> "%02x".format(byte) }
+        }.getOrNull()
+    }
+
+    /** 卡片的设备 id 和这条电量快照的地址是否同一个设备。 */
+    fun matchesDeviceId(cardId: String?, address: String?): Boolean {
+        val id = cardId?.trim()?.lowercase(Locale.ROOT).orEmpty()
+        if (id.isEmpty()) return false
+        return id == deviceIdFor(address)
     }
 
     private fun normalize(raw: String?): String =

@@ -64,4 +64,37 @@ class ColorOsHomeCardBatteryTest {
         assertFalse(ColorOsHomeCardBattery.matches("", ""))
         assertFalse(ColorOsHomeCardBattery.matches("   ", "FreeClip"))
     }
+
+    @Test
+    fun `device id is md5 of the uppercase mac`() {
+        // 真机向量：HomeCardView.j / .s 上抓到的就是这个值。
+        assertEquals(
+            "f68a5d82181e48edd39eb1824f43c1fa",
+            ColorOsHomeCardBattery.deviceIdFor("30:A9:98:CB:C4:54"),
+        )
+    }
+
+    @Test
+    fun `device id normalizes case and surrounding spaces`() {
+        val expected = "f68a5d82181e48edd39eb1824f43c1fa"
+        assertEquals(expected, ColorOsHomeCardBattery.deviceIdFor("30:a9:98:cb:c4:54"))
+        assertEquals(expected, ColorOsHomeCardBattery.deviceIdFor("  30:A9:98:CB:C4:54  "))
+    }
+
+    @Test
+    fun `device id is null for blank address`() {
+        assertNull(ColorOsHomeCardBattery.deviceIdFor(null))
+        assertNull(ColorOsHomeCardBattery.deviceIdFor(""))
+        assertNull(ColorOsHomeCardBattery.deviceIdFor("   "))
+    }
+
+    @Test
+    fun `card id matches the same device and rejects others`() {
+        val cardId = "f68a5d82181e48edd39eb1824f43c1fa"
+        assertTrue(ColorOsHomeCardBattery.matchesDeviceId(cardId, "30:A9:98:CB:C4:54"))
+        assertTrue(ColorOsHomeCardBattery.matchesDeviceId("F68A5D82181E48EDD39EB1824F43C1FA", "30:A9:98:CB:C4:54"))
+        assertFalse(ColorOsHomeCardBattery.matchesDeviceId(cardId, "30:A9:98:CB:C4:55"))
+        assertFalse(ColorOsHomeCardBattery.matchesDeviceId(null, "30:A9:98:CB:C4:54"))
+        assertFalse(ColorOsHomeCardBattery.matchesDeviceId(cardId, null))
+    }
 }

@@ -3,6 +3,7 @@ package moe.chenxy.huaweipods.backend.soundcore
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import android.content.ComponentName
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -406,6 +407,10 @@ object SoundcoreBackend : EarbudBackend {
             putExtra("device_name", deviceName)
             routeStr?.let { putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it) }
         }
+        sendWidgetBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_CONNECTED) {
+            putExtra("device_name", deviceName)
+            routeStr?.let { putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it) }
+        }
     }
 
     private fun sendDisconnectedBroadcast(device: BluetoothDevice) {
@@ -414,6 +419,9 @@ object SoundcoreBackend : EarbudBackend {
             putExtra("address", device.address)
         }
         sendExternalBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_DISCONNECTED) {
+            putExtra("address", device.address)
+        }
+        sendWidgetBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_DISCONNECTED) {
             putExtra("address", device.address)
         }
     }
@@ -428,6 +436,10 @@ object SoundcoreBackend : EarbudBackend {
             putExtra("status", battery)
             putBatteryExtras(battery)
         }
+        sendWidgetBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED) {
+            putExtra("status", battery)
+            putBatteryExtras(battery)
+        }
     }
 
     private fun sendAnc(mode: NoiseControlMode) {
@@ -436,6 +448,9 @@ object SoundcoreBackend : EarbudBackend {
             putExtra("status", mode.broadcastStatus)
         }
         sendExternalBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_ANC_CHANGED) {
+            putExtra("status", mode.broadcastStatus)
+        }
+        sendWidgetBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_ANC_CHANGED) {
             putExtra("status", mode.broadcastStatus)
         }
     }
@@ -447,6 +462,25 @@ object SoundcoreBackend : EarbudBackend {
         }
         sendExternalBroadcast(ctx, HuaweiPodsAction.ACTION_HUAWEI_ANC_LEVEL_CHANGED) {
             putExtra("level", level)
+        }
+    }
+
+    private fun sendWidgetBroadcast(ctx: Context, action: String, fill: Intent.() -> Unit = {}) {
+        val currentDevice = activeDevice
+        runCatching {
+            val intent = Intent(action).apply {
+                component = ComponentName(
+                    BuildConfig.APPLICATION_ID,
+                    "moe.chenxy.huaweipods.widget.SoundcoreWidgetReceiver"
+                )
+                putExtra("vendor", "soundcore")
+                currentDevice?.let {
+                    putExtra("address", it.address)
+                    putExtra("device_name", it.name ?: it.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947)
+                }
+                fill()
+            }
+            ctx.sendBroadcast(intent)
         }
     }
 

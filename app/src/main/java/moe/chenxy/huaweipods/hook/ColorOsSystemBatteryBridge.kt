@@ -8,6 +8,7 @@ import android.os.Build
 import java.lang.reflect.Method
 import moe.chenxy.huaweipods.platform.RomFamily
 import moe.chenxy.huaweipods.platform.RomIntegrationPolicy
+import moe.chenxy.huaweipods.utils.SystemApisUtils.setMetadata
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.PodParams
 
@@ -138,6 +139,7 @@ internal object ColorOsSystemBatteryBridge {
             }
         }
         notifyAirPodsManager(context, device, info)
+        publishAndroidMetadata(device, battery)
         // OPLUS 在右耳缺席时会把 -1 当作最低值写入标准电量；这里再用在线耳机较低值校正。
         val systemLevel = colorOsSystemBatteryLevel(battery)
         if (systemLevel >= 0) setAndroidBatteryLevel(context, device, systemLevel)
@@ -146,6 +148,44 @@ internal object ColorOsSystemBatteryBridge {
         if (signature != lastPublishSignature) {
             lastPublishSignature = signature
             Log.i(TAG, "ColorOS battery published info=${info.joinToString()} system=$systemLevel inEar=$inEar")
+        }
+    }
+
+    private fun publishAndroidMetadata(device: BluetoothDevice, battery: BatteryParams) {
+        runCatching {
+            // Key 6: Untethered Headset (TWS)
+            device.setMetadata(6, "true".toByteArray())
+            // Key 17: Device type for ColorOS and Android ("oplusEarBuds")
+            device.setMetadata(17, "oplusEarBuds".toByteArray())
+
+            battery.left?.let { pod ->
+                if (pod.isConnected && pod.battery in 0..100) {
+                    device.setMetadata(10, pod.battery.toString().toByteArray())
+                    device.setMetadata(13, pod.isCharging.toString().toByteArray())
+                }
+            }
+            battery.right?.let { pod ->
+                if (pod.isConnected && pod.battery in 0..100) {
+                    device.setMetadata(11, pod.battery.toString().toByteArray())
+                    device.setMetadata(14, pod.isCharging.toString().toByteArray())
+                }
+            }
+            battery.case?.let { pod ->
+                if (pod.isConnected && pod.battery in 0..100) {
+                    device.setMetadata(12, pod.battery.toString().toByteArray())
+                    device.setMetadata(15, pod.isCharging.toString().toByteArray())
+                }
+            }
+            val minEar = listOfNotNull(battery.left, battery.right)
+                .filter { it.isConnected }
+                .minOfOrNull { it.battery.coerceIn(0, 100) }
+            if (minEar != null) {
+                device.setMetadata(18, minEar.toString().toByteArray())
+                val isCharging = battery.left?.isCharging == true || battery.right?.isCharging == true
+                device.setMetadata(19, isCharging.toString().toByteArray())
+            }
+        }.onFailure {
+            Log.w(TAG, "publishAndroidMetadata failed for ${device.address}", it)
         }
     }
 

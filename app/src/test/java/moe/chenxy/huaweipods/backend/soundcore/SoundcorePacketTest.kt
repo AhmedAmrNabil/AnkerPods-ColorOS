@@ -144,25 +144,26 @@ class SoundcorePacketTest {
         assertEquals(true, battery.right?.isConnected)
         assertEquals(true, battery.case?.isConnected)
         assertEquals(NoiseControlMode.NOISE_CANCELLATION, ancMode)
-        assertEquals(0, result.ancSubMode) // Manual mode
+        assertEquals(5, result.ancSubMode) // Manual mode level 5
+        assertEquals(false, result.isAdaptiveAnc)
     }
 
     @Test
     fun testBuildSetSoundModesPacketDiscreteLevels() {
-        // Manual mode (submode 0)
-        val manualPacket = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 0)
+        // Manual mode (submode 5, isAdaptive=false)
+        val manualPacket = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 5, isAdaptive = false)
         assertEquals(0x00, manualPacket[9].toInt() and 0xFF) // ambient: ANC
         assertEquals(0x50, manualPacket[10].toInt() and 0xFF)
         assertEquals(0x00, manualPacket[12].toInt() and 0xFF) // nc_mode: Manual
 
-        // Adaptive level 1 (submode 1)
-        val adaptivePacket1 = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 1)
+        // Adaptive level 1 (submode 1, isAdaptive=true)
+        val adaptivePacket1 = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 1, isAdaptive = true)
         assertEquals(0x00, adaptivePacket1[9].toInt() and 0xFF)
         assertEquals(0x51, adaptivePacket1[10].toInt() and 0xFF) // (5 << 4) | 1
         assertEquals(0x01, adaptivePacket1[12].toInt() and 0xFF) // nc_mode: Adaptive
 
-        // Adaptive level 5 (submode 5)
-        val adaptivePacket5 = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 5)
+        // Adaptive level 5 (submode 5, isAdaptive=true)
+        val adaptivePacket5 = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 5, isAdaptive = true)
         assertEquals(0x00, adaptivePacket5[9].toInt() and 0xFF)
         assertEquals(0x55, adaptivePacket5[10].toInt() and 0xFF) // (5 << 4) | 5
         assertEquals(0x01, adaptivePacket5[12].toInt() and 0xFF) // nc_mode: Adaptive
@@ -172,20 +173,23 @@ class SoundcorePacketTest {
     fun testParseSoundModesWithSubMode() {
         // Inbound sound modes with Adaptive ANC level 2
         val adaptiveBody = byteArrayOf(0x00, 0x52.toByte(), 0x01, 0x01)
-        val (adaptiveMode, adaptiveSub) = SoundcorePacket.parseSoundModesWithSubMode(adaptiveBody)
-        assertEquals(NoiseControlMode.NOISE_CANCELLATION, adaptiveMode)
-        assertEquals(2, adaptiveSub)
+        val resultAdaptive = SoundcorePacket.parseSoundModesWithSubMode(adaptiveBody)
+        assertEquals(NoiseControlMode.NOISE_CANCELLATION, resultAdaptive.ancMode)
+        assertEquals(2, resultAdaptive.ancSubMode)
+        assertTrue(resultAdaptive.isAdaptive)
 
-        // Inbound sound modes with Manual ANC
+        // Inbound sound modes with Manual ANC level 5
         val manualBody = byteArrayOf(0x00, 0x50.toByte(), 0x01, 0x00)
-        val (manualMode, manualSub) = SoundcorePacket.parseSoundModesWithSubMode(manualBody)
-        assertEquals(NoiseControlMode.NOISE_CANCELLATION, manualMode)
-        assertEquals(0, manualSub)
+        val resultManual = SoundcorePacket.parseSoundModesWithSubMode(manualBody)
+        assertEquals(NoiseControlMode.NOISE_CANCELLATION, resultManual.ancMode)
+        assertEquals(5, resultManual.ancSubMode)
+        assertEquals(false, resultManual.isAdaptive)
 
         // Inbound sound modes with Transparency
         val transBody = byteArrayOf(0x01, 0x00, 0x01, 0x00)
-        val (transMode, transSub) = SoundcorePacket.parseSoundModesWithSubMode(transBody)
-        assertEquals(NoiseControlMode.TRANSPARENCY, transMode)
-        assertNull(transSub)
+        val resultTrans = SoundcorePacket.parseSoundModesWithSubMode(transBody)
+        assertEquals(NoiseControlMode.TRANSPARENCY, resultTrans.ancMode)
+        assertNull(resultTrans.ancSubMode)
+        assertEquals(false, resultTrans.isAdaptive)
     }
 }

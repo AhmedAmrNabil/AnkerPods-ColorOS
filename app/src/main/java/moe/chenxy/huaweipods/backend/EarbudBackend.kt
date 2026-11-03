@@ -16,6 +16,9 @@ interface EarbudBackend {
     fun setAncMode(mode: NoiseControlMode, subMode: Int?) {
         setAncMode(mode)
     }
+    fun setAncMode(mode: NoiseControlMode, subMode: Int?, isAdaptive: Boolean) {
+        setAncMode(mode, subMode)
+    }
     fun cycleAncMode()
 
     fun audioSessionAddress(): String?

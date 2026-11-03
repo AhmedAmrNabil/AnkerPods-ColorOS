@@ -35,6 +35,8 @@ object SoundcoreStateManager {
 
     var ancMode: NoiseControlMode = NoiseControlMode.OFF
     var ancSubMode: Int? = null
+    var isAdaptiveAnc: Boolean = false
+        internal set
 
     fun levelToPercent(level: Int, maxLevel: Int = 5): Int {
         if (level == 255 || level < 0) return 0
@@ -72,10 +74,13 @@ object SoundcoreStateManager {
             if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 129) {
                 val ncMode = body[129].toInt() and 0xFF
                 if (ncMode == 0) {
-                    ancSubMode = 0 // Manual
+                    val manual = (body[127].toInt() and 0xF0) shr 4
+                    ancSubMode = if (manual in 1..5) manual else 5
+                    isAdaptiveAnc = false
                 } else {
                     val adaptive = body[127].toInt() and 0x0F
-                    ancSubMode = if (adaptive in 1..5) adaptive else 3 // Adaptive
+                    ancSubMode = if (adaptive in 1..5) adaptive else 3
+                    isAdaptiveAnc = true
                 }
             }
         }
@@ -196,5 +201,6 @@ object SoundcoreStateManager {
         rightBattery = 100
         ancMode = NoiseControlMode.OFF
         ancSubMode = null
+        isAdaptiveAnc = false
     }
 }

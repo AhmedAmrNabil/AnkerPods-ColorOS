@@ -53,6 +53,7 @@ internal object ColorOsBatterySnapshot {
         )
     }
 
+    @Synchronized
     fun save(context: Context, pod: ColorOsPodBattery) {
         runCatching {
             Settings.Global.putString(context.contentResolver, SETTINGS_KEY, encode(pod))
@@ -62,6 +63,27 @@ internal object ColorOsBatterySnapshot {
     fun load(context: Context): ColorOsPodBattery? = runCatching {
         decode(Settings.Global.getString(context.contentResolver, SETTINGS_KEY))
     }.getOrNull()
+
+    /** 与蓝牙发布共用锁，只清除断开设备自己的快照。 */
+    @Synchronized
+    fun clear(context: Context, address: String): Boolean = runCatching {
+        clearIfMatches(
+            address,
+            read = { Settings.Global.getString(context.contentResolver, SETTINGS_KEY) },
+            write = { Settings.Global.putString(context.contentResolver, SETTINGS_KEY, it) },
+        )
+    }.getOrDefault(false)
+
+    internal fun clearIfMatches(
+        address: String,
+        read: () -> String?,
+        write: (String?) -> Boolean,
+    ): Boolean {
+        if (address.isBlank()) return false
+        val pod = decode(read()) ?: return false
+        if (ColorOsPodBatteryStore.key(address) != ColorOsPodBatteryStore.key(pod.address)) return false
+        return write(null)
+    }
 
     /** 把快照灌回内存表；已经有广播数据时不覆盖。返回是否发生了回填。 */
     fun restoreInto(context: Context, store: (ColorOsPodBattery) -> Unit = ColorOsPodBatteryStore::put): Boolean {

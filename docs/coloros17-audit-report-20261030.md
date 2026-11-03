@@ -796,9 +796,10 @@ fun currentPod(): ColorOsPodBattery? {
 
 判掉时打一条 `skip card text="…" (not our pod)`——这条日志用来区分「钩子没跑」和
 「跑了但正确跳过了别人的卡」，后者才是期望行为。新增 5 个门禁用例，测试 711 → **716**。
-### 9.22 控制中心那一格：QS 磁贴 + Compose，根本没有电量位
+### 9.22 控制中心蓝牙磁贴：原生 QS 状态入口与 Compose 渲染
 
-这一节把「控制中心蓝牙卡片」这条线彻底查死，结论是**这一格没有可改的电量**，不是我们没找到钩点。
+最初只探测公开 Tile setter、TextView 和模型构造函数，遗漏了原生状态入口。本节保留当时回显，
+并在 §9.22.3–9.22.4 更正结论：应在渲染前改写 `QSTile.State`，不能用 setter 零命中证明无法补电量。
 
 #### 9.22.1 平板上的真实形态
 
@@ -830,11 +831,11 @@ fun currentPod(): ColorOsPodBattery? {
 2. **`TextView.setText` 按连接态文案抓**：加了一条只匹配 `已连接` / `已配对` 的探针（上限 24 条），
    控制中心反复开关、耳机反复连断，SystemUI 里**零命中**。
 
-3. **`SeedlingCardData` / `CapsuleInfo`**（mydevices 侧）：两个钩子都装上了
-   （`seedling card constructors=3`、`capsule constructors=2`），耳机连上后这两个构造函数
-   **一次都没被调用** —— 控制中心那一格不经过它们。
+3. **`SeedlingCardData` / `CapsuleInfo`**（mydevices 侧）：当时两个构造钩子都装上了
+   （`seedling card constructors=3`、`capsule constructors=2`），连接时构造函数零命中。
+   这不足以排除胶囊路径：MyDevices 的 JSON 显示/更新通过 Gson 分配 `CapsuleInfo`，可以绕过构造函数。
 
-#### 9.22.3 原因：ColorOS 17 的 QS 面板已经 Compose 化
+#### 9.22.3 渲染路径与原生状态入口（修正）
 
 `SystemUI.apk` 里的类统计（9 dex 全量描述符）：
 
@@ -843,20 +844,31 @@ fun currentPod(): ColorOsPodBattery? {
 | `qs` 相关且含 `compose` | **520** 个，含 `com/android/systemui/qs/panels/ui/compose/PaginatedGridLayout`、`qs/composefragment/QSFragmentComposeKt`、`infinitegrid/TileKt$Tile$…` |
 | `androidx/compose/ui/text/` | **415** 个（`AnnotatedString`、`AndroidParagraph` 等） |
 
-磁贴是 Compose 画的文本，自然不经 `TextView.setText`；`Tile` 对象只是状态载体。
-要在这一格加电量，得挂 Compose 的 `AnnotatedString` / `TextLayoutResult`，跟 ColorOS 版本强绑定，
-风险（SystemUI 崩了就没状态栏）和收益完全不成比例——**这一项目到此为止**。
+这些类和 TextView 零命中可以支持 Compose 渲染的判断，但不能推出必须拦截 Compose 文本。
+公开的 `android.service.quicksettings.Tile` 用于 TileService；原生蓝牙磁贴持有的是
+`com.android.systemui.plugins.qs.QSTile.State`，两者不是同一状态对象。
 
-#### 9.22.4 我们保留了什么
+固件反汇编确认 `com.oplus.systemui.qs.tiles.OplusBluetoothTile.handleUpdateState`
+的 `(QSTile.BooleanState, Object)` 实体重载直接写入 `label`、`secondaryLabel`，并构造
+`labelDesc` / `contentDescription`。因此可以在宿主更新后、渲染前定点修改副标题，
+无需拦截 `AnnotatedString` 或 `TextLayoutResult`。`Tile.setSubtitle` 零命中首先说明原挂点不适用。
 
-`ColorOsSystemUiBatteryHook` 里只留两件事，都是低风险：
+#### 9.22.4 审查后的实现
 
-1. `Tile.setSubtitle`：万一某个 ColorOS 版本确实用副标题写「已连接」，就把它换成三段电量
-   （`左 100% 右 100% 盒 88%`），判身份用 `Tile.label`；
-2. `TextView.setText` 探针：只在 `LogLevel=DEBUG` 出声，用来以后定位 SystemUI 里的电量文本。
+- **原生 QS：** 移除全局 `Tile.setSubtitle` 改写，改挂上述 `BooleanState` 实体重载，避免同时拦截桥接方法。
+  只在蓝牙启用、真实已连接、连接列表恰好一个设备且 MAC 命中电量记录时改写；多个设备时保留宿主文案，
+  因为尚未证实 `getConnectedDeviceName()` 选择列表中哪一个 MAC。可确认的无障碍副标题末段同步更新。
+- **数据链路：** SystemUI 在 Application attach 或热重载时注册可信电量/断连接收器，首次恢复一次快照；
+  读取不重复回填，关闭注销接收器并恢复宿主刷新。蓝牙发送方补齐 SystemUI/Settings 的电量与断连目标，
+  断连时仅清除地址匹配的持久快照。控制广播白名单不扩展。
+- **MyDevices 胶囊：** `CapsuleInfo.getSubTitle()` 的读取后钩子覆盖首次渲染和 Gson 更新，
+  按自身 MAC 选择记录，仅接受 `CONNECTED` 类型，不修改图标 URI、标题和低电提示。
+- **文案：** 中英文连接态完整匹配，严格限制百分比语法；连接中、失败、断开、URI 保持原文。
+  紧凑格式复用 seedling 的分段逻辑，英文使用 `L/R/Case`，不足两段不展开。
+- **探针：** 保留 `TextView.setText` DEBUG 探针，作为排查工具。
 
-为此新增 3 个纯函数与 10 个用例：`capsuleMatchesPod`（按 `CapsuleInfo.mac` 精确配对）、
-`isCapsuleBatteryCandidate`、`capsuleBatteryText`（空格分隔的紧凑三段）。
+以上挂点来自静态固件证据；本节先记录修复逻辑。新构建的单测、构建及实际设备结果单独记录，
+§9.23 的既有设置页/设备空间结果不能作为新 QS 和胶囊路径已经通过的证据。
 
 ### 9.23 新构建回归验证（平板，2026-11-03）
 
@@ -868,3 +880,23 @@ fun currentPod(): ColorOsPodBattery? {
 | 设备空间卡片（`huaweipods_multi_battery=3`） | `FreeClip 🔋 L100 R100 C85`，旁边 `一加 15 🔋 80` 未被误伤 | `tablet-final-03-devicemulti.png` |
 
 耳机图标也恢复成真实 FreeClip 图（图片注入链路正常）。验证后开关已复位成 `0`。
+
+### 9.24 审查修复验证（2026-11-03）
+
+- **单测：** 115 个测试类、746 项断言用例通过，比审查基线新增 25 项。
+  覆盖冲突 MAC、多记录、绕过构造函数的模型、URI/标题不变、中英文连接态、0%/缺失通道、
+  QS 状态/身份/无障碍文案、快照按地址清理，以及电量源初始化、断连、关闭和热重载。
+- **运行器：** 正常 `:app:testDebugUnitTest` 仍在执行断言前报测试类 `ClassNotFoundException`。
+  使用导出的同一 classpath 与 JDK 21 `JUnitCore` 分批运行通过。直接运行前须同时构建
+  `:app:compileDebugUnitTestKotlin :app:bundleDebugClassesToRuntimeJar`，避免新测试误用旧 runtime JAR。
+- **Lint / 构建：** `:app:lintDebug :app:assembleRelease` 成功；Lint 0 error、203 warning，
+  新增的 Application attach 私有 API 反射警告属于宿主挂点，调用失败有回退。
+- **真机原生状态：** OPD2515 / 一代 FreeClip，覆盖安装同签名 Release。
+  `dumpsys activity service com.android.systemui/.SystemUIService` 确认单个连接设备后，
+  `secondaryLabel=左 100% 右 100% 盒 81%`，`labelDesc` 同步为三段，`state=2,value=true`。
+  宿主原副标题还存在 `100% 的电量` 这种后缀写法，已纳入严格候选语法和回归。
+- **热重载：** 初次从旧 Tile setter 版本迁移时，现有磁贴未重新计算；重建一次 SystemUI 后确认冷启动生效。
+  随后再次覆盖安装，新实现同一 SystemUI PID 2727 内 `restored=true replaced=3 new=0 removed=0 failed=0`，
+  电量源重新 attach，三段原生状态继续存在。
+- **动态验证边界：** 本轮没有完成真实胶囊首次展示/JSON 更新、物理断连重连、英文系统和多个蓝牙设备的
+  全流程验收；这些边界目前由静态消费链路与单测覆盖。原生状态转储通过不等于所有屏幕尺寸都完整显示三段。

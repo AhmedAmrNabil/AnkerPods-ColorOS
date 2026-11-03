@@ -2597,11 +2597,20 @@ object HuaweiHfpController {
     private fun sendExternalBroadcast(action: String, fill: Intent.() -> Unit = {}) {
         val ctx = context ?: return
         val currentDevice = device
-        listOf(
-            "com.heytap.mydevices",
-            // 蓝牙设置列表行的电量摘要由宿主自己拼，只带左右耳；设置进程要靠这条广播拿到盒电量再补齐。
-            "com.oplus.wirelesssettings",
-        ).forEach { targetPackage ->
+        val targets = buildList {
+            add("com.heytap.mydevices")
+            add("com.oplus.wirelesssettings")
+            // 两个进程都独立持有电量仓库；只向它们投递电量和断连，不扩展控制广播权限。
+            if (HuaweiPodsAction.canonical(action) in setOf(
+                    HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED,
+                    HuaweiPodsAction.ACTION_PODS_DISCONNECTED,
+                )
+            ) {
+                add("com.android.systemui")
+                add("com.android.settings")
+            }
+        }
+        targets.forEach { targetPackage ->
             Intent(action).apply {
                 putExtra("vendor", "huawei")
                 putExtra(HuaweiPodsAction.EXTRA_EVENT_ELAPSED_REALTIME, SystemClock.elapsedRealtime())

@@ -32,13 +32,17 @@ internal fun expandSeedlingBareValue(raw: String?, triple: ColorOsBatteryTriple?
 }
 
 /** 与宿主自己的写法保持一致：`左 100%，右 100%，盒 88%`；不足两段返回 null。 */
-internal fun seedlingTripleText(triple: ColorOsBatteryTriple?): String? {
+internal fun seedlingTripleText(
+    triple: ColorOsBatteryTriple?,
+    separator: String = "，",
+    chinese: Boolean = true,
+): String? {
     if (triple == null || triple.parts.size < 2) return null
-    return triple.parts.joinToString("，") { part ->
+    return triple.parts.joinToString(separator) { part ->
         val label = when (part.channel) {
-            ColorOsBatteryTriple.CHANNEL_LEFT -> "左"
-            ColorOsBatteryTriple.CHANNEL_RIGHT -> "右"
-            ColorOsBatteryTriple.CHANNEL_BOX -> "盒"
+            ColorOsBatteryTriple.CHANNEL_LEFT -> if (chinese) "左" else "L"
+            ColorOsBatteryTriple.CHANNEL_RIGHT -> if (chinese) "右" else "R"
+            ColorOsBatteryTriple.CHANNEL_BOX -> if (chinese) "盒" else "Case"
             else -> ""
         }
         "$label ${part.value}%"
@@ -68,46 +72,48 @@ internal fun seedlingCardMentionsPod(values: List<String?>, pod: ColorOsPodBatte
     }
 }
 
-/** 连接态文案：胶囊卡在没有电量的场景下就显示这几个词。 */
-private val CAPSULE_CONNECTION_LABELS = setOf("已连接", "已配对", "使用中", "正在使用")
+/** 完整匹配连接态，避免 Disconnected 被 Connected 的子串命中。 */
+private val CAPSULE_CONNECTION_LABELS = setOf(
+    "已连接", "已配对", "使用中", "正在使用", "connected", "paired", "in use", "currently in use",
+)
+private val CAPSULE_CONNECTION_PREFIX = Regex(
+    "^(?:${CAPSULE_CONNECTION_LABELS.joinToString("|") { Regex.escape(it) }})[，,。.:：\\s]+",
+    RegexOption.IGNORE_CASE,
+)
+private const val CAPSULE_BATTERY_PART =
+    "(?:(?:左耳?|右耳?|耳机盒|盒|left|right|case|l|r)\\s*[:：]?\\s*)?(?:100|[1-9]?\\d)\\s*%"
+private val CAPSULE_BATTERY_VALUE = Regex(
+    "(?:电量\\s*[:：]?\\s*|battery\\s*:?\\s*)?$CAPSULE_BATTERY_PART" +
+        "(?:[\\s，,、·]+$CAPSULE_BATTERY_PART)*(?:\\s*(?:的电量|battery))?[。.]?",
+    RegexOption.IGNORE_CASE,
+)
 
-/**
- * 控制中心那张胶囊卡（`CapsuleInfo`）不属于我们时返回 false。
- *
- * 比 `SeedlingCardData` 好判：`CapsuleInfo` 自带 `mac` 字段，可以按地址精确配对，不依赖
- * `md5(大写 MAC)` 的推断。
- */
-internal fun capsuleMatchesPod(values: List<String?>, pod: ColorOsPodBattery?): Boolean {
-    if (pod == null) return false
-    val address = pod.address.trim().uppercase(java.util.Locale.ROOT)
-    if (address.isNotEmpty() && values.filterNotNull().any { it.trim().uppercase(java.util.Locale.ROOT) == address }) {
-        return true
-    }
-    return seedlingCardMentionsPod(values, pod)
-}
+/** CapsuleInfo 的独立 MAC 是唯一身份，不按同型号名称回退。 */
+internal fun capsuleMatchesPod(address: String?, pod: ColorOsPodBattery?): Boolean =
+    !address.isNullOrBlank() && pod != null &&
+        address.trim().equals(pod.address.trim(), ignoreCase = true)
 
-/** 该不该被换成三段电量：连接态文案或已经带电量的字符串。 */
+/** 只接受连接态或完整的电量语法，URI、标题和错误提示中的百分号不算电量。 */
 internal fun isCapsuleBatteryCandidate(raw: String?): Boolean {
     val text = raw?.trim().orEmpty()
     if (text.isEmpty() || text.length > MAX_SEEDLING_TEXT_LENGTH) return false
-    if (text in CAPSULE_CONNECTION_LABELS) return true
-    return text.contains('%') || text.contains("电量")
+    if (text.lowercase(java.util.Locale.ROOT) in CAPSULE_CONNECTION_LABELS) return true
+    return CAPSULE_BATTERY_VALUE.matches(CAPSULE_CONNECTION_PREFIX.replaceFirst(text, ""))
 }
 
-/**
- * 胶囊卡副标题用的三段写法：`左 100% 右 100% 盒 88%`。
- *
- * 用空格而不是全角逗号——胶囊卡比设置页窄，全角标点容易换行。不足两段返回 null（保持宿主原文）。
- */
-internal fun capsuleBatteryText(triple: ColorOsBatteryTriple?): String? {
-    if (triple == null || triple.parts.size < 2) return null
-    return triple.parts.joinToString(" ") { part ->
-        val label = when (part.channel) {
-            ColorOsBatteryTriple.CHANNEL_LEFT -> "左"
-            ColorOsBatteryTriple.CHANNEL_RIGHT -> "右"
-            ColorOsBatteryTriple.CHANNEL_BOX -> "盒"
-            else -> ""
-        }
-        "$label ${part.value}%"
-    }
+/** getter 的返回值策略同样适用于 Gson 绕过构造函数分配的模型。 */
+internal fun rewriteCapsuleSubtitle(
+    raw: String?,
+    address: String?,
+    capsuleType: String?,
+    pod: ColorOsPodBattery?,
+    chinese: Boolean,
+): String? {
+    if (capsuleType != "CONNECTED" || !capsuleMatchesPod(address, pod)) return null
+    if (!isCapsuleBatteryCandidate(raw)) return null
+    return capsuleBatteryText(colorOsBatteryTriple(pod), chinese)
 }
+
+/** 紧凑胶囊副标题；分段标签和最少段数规则与 seedling 共用。 */
+internal fun capsuleBatteryText(triple: ColorOsBatteryTriple?, chinese: Boolean = true): String? =
+    seedlingTripleText(triple, separator = " ", chinese = chinese)

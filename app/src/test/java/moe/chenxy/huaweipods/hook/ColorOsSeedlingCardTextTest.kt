@@ -125,17 +125,56 @@ class ColorOsSeedlingCardTextTest {
 
     @Test
     fun `capsule matches by mac`() {
-        assertTrue(capsuleMatchesPod(listOf("30:A9:98:CB:C4:54", "HUAWEI FreeClip", "已连接"), pod))
+        assertTrue(capsuleMatchesPod("30:A9:98:CB:C4:54", pod))
     }
 
     @Test
     fun `capsule matches lower case mac`() {
-        assertTrue(capsuleMatchesPod(listOf("30:a9:98:cb:c4:54"), pod))
+        assertTrue(capsuleMatchesPod("30:a9:98:cb:c4:54", pod))
     }
 
     @Test
-    fun `other capsule is rejected`() {
-        assertFalse(capsuleMatchesPod(listOf("AA:BB:CC:DD:EE:FF", "一加 15", "85%"), pod))
+    fun `different or missing mac is rejected even with the same device name`() {
+        assertFalse(capsuleMatchesPod("AA:BB:CC:DD:EE:FF", pod))
+        assertFalse(capsuleMatchesPod(pod.name, pod))
+        assertFalse(capsuleMatchesPod(null, pod))
+        assertFalse(capsuleMatchesPod("", pod))
+        assertNull(rewriteCapsuleSubtitle("已连接", "AA:BB:CC:DD:EE:FF", "CONNECTED", pod, true))
+    }
+
+    @Test
+    fun `English connection labels use English channel labels`() {
+        for (raw in listOf("Connected", "In use", "connected", "IN USE", "Battery: 88%")) {
+            assertTrue(raw, isCapsuleBatteryCandidate(raw))
+            assertEquals("L 100% R 100% Case 88%", rewriteCapsuleSubtitle(raw, pod.address, "CONNECTED", pod, false))
+        }
+    }
+
+    @Test
+    fun `transitional failure disconnect and low battery capsules stay original`() {
+        for (raw in listOf("正在连接", "连接失败", "已断开", "Connecting", "Disconnected", "Connection failed", "低电量 10%", "Low battery: 10%")) {
+            assertFalse(raw, isCapsuleBatteryCandidate(raw))
+            assertNull(rewriteCapsuleSubtitle(raw, pod.address, "CONNECTED", pod, true))
+        }
+        for (type in listOf("CONNECT", "DISCONNECT", "LOW_BATTERY", "SET_ACTIVE", "UNKNOWN", null)) {
+            assertNull(rewriteCapsuleSubtitle("85%", pod.address, type, pod, true))
+        }
+    }
+
+    @Test
+    fun `URI and title percentages do not count as battery subtitles`() {
+        for (raw in listOf("content://icons/FreeClip%20Blue", "FreeClip 100%", "电量特别版", "101%", "-1%", "正在连接，电量：88%")) {
+            assertFalse(raw, isCapsuleBatteryCandidate(raw))
+        }
+        assertTrue(isCapsuleBatteryCandidate("已连接。电量：100%。"))
+        assertTrue(isCapsuleBatteryCandidate("左 100% 右 99% 盒 88%"))
+    }
+
+    @Test
+    fun `zero battery and missing parts retain their meaning`() {
+        val partial = pod.copy(left = 0, rightConnected = false)
+        assertEquals("左 0% 盒 88%", rewriteCapsuleSubtitle("0%", pod.address, "CONNECTED", partial, true))
+        assertNull(rewriteCapsuleSubtitle("88%", pod.address, "CONNECTED", partial.copy(leftConnected = false), true))
     }
 
     @Test

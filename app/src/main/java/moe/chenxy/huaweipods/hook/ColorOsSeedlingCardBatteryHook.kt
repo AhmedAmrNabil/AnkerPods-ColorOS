@@ -36,34 +36,19 @@ internal object ColorOsSeedlingCardBatteryHook : HookContext() {
             .onFailure { Log.w(TAG, "capsule info hook unavailable", it) }
     }
 
-    /**
-     * 控制中心那张「HUAWEI FreeClip / 已连接」胶囊卡走的是 `CapsuleInfo`，不是 `SeedlingCardData`
-     * （真机实测：耳机连上、胶囊出现，`SeedlingCardData` 构造函数一次都没被调）。
-     *
-     * `CapsuleInfo` 自带 `mac` 字段，可以精确配对；命中后把连接态文案换成三段电量。
-     */
+    /** 首次展示和 JSON 更新都读取副标题 getter；不改构造参数或模型内的图标、标题。 */
     private fun hookCapsuleInfo() {
-        val constructors = findClass(CAPSULE_CLASS).declaredConstructors
-        Log.i(TAG, "capsule constructors=${constructors.size}")
-        for (constructor in constructors) {
-            constructor.isAccessible = true
-            hookConstructorBefore(constructor) {
-                runCatching {
-                    val pod = ColorOsBatterySummaryInjector.currentPod() ?: return@runCatching
-                    val triple = colorOsBatteryTriple(pod) ?: return@runCatching
-                    if (!capsuleMatchesPod(args.filterIsInstance<String>(), pod)) return@runCatching
-                    val text = capsuleBatteryText(triple) ?: return@runCatching
-                    val newArgs = args.toMutableList()
-                    var changed = false
-                    for (index in newArgs.indices) {
-                        val raw = newArgs[index] as? String ?: continue
-                        if (raw == text || !isCapsuleBatteryCandidate(raw)) continue
-                        Log.i(TAG, "capsule text=\"$raw\" -> \"$text\"")
-                        newArgs[index] = text
-                        changed = true
-                        break
-                    }
-                    if (changed) proceedWithArgs(*newArgs.toTypedArray())
+        val subtitle = ColorOsCapsuleSubtitle(findClass(CAPSULE_CLASS))
+        hookAfter(subtitle.getter) {
+            runCatching {
+                val capsule = instance ?: return@runCatching
+                val raw = result as? String ?: return@runCatching
+                val text = subtitle.rewrite(
+                    capsule, raw, chinese = java.util.Locale.getDefault().language == "zh",
+                ) ?: return@runCatching
+                if (raw != text) {
+                    result = text
+                    Log.d(TAG, "capsule subtitle=\"$raw\" -> \"$text\"")
                 }
             }
         }

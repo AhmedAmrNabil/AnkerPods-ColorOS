@@ -59,4 +59,28 @@ class ColorOsBatterySnapshotTest {
         assertNull(ColorOsBatterySnapshot.decode("|88|1|92|1|100|1|name"))
         assertNull(ColorOsBatterySnapshot.decode("30:A9:98:CB:C4:54|x|1|92|1|100|1|name"))
     }
+
+    @Test
+    fun `disconnect clears only the matching snapshot including lower case addresses`() {
+        var persisted: String? = ColorOsBatterySnapshot.encode(pod)
+        assertFalse(ColorOsBatterySnapshot.clearIfMatches("AA:BB:CC:DD:EE:FF", { persisted }) { persisted = it; true })
+        assertEquals(pod.address.uppercase(), ColorOsBatterySnapshot.decode(persisted)?.address)
+        assertTrue(ColorOsBatterySnapshot.clearIfMatches(pod.address, { persisted }) { persisted = it; true })
+        assertNull(persisted)
+    }
+
+    @Test
+    fun `invalid addresses or snapshots never issue a clear write`() {
+        var writes = 0
+        val write: (String?) -> Boolean = { writes++; true }
+        assertFalse(ColorOsBatterySnapshot.clearIfMatches("", { ColorOsBatterySnapshot.encode(pod) }, write))
+        assertFalse(ColorOsBatterySnapshot.clearIfMatches(pod.address, { "malformed" }, write))
+        assertFalse(ColorOsBatterySnapshot.clearIfMatches(pod.address, { null }, write))
+        assertEquals(0, writes)
+    }
+
+    @Test
+    fun `failed storage write is not reported as a successful clear`() {
+        assertFalse(ColorOsBatterySnapshot.clearIfMatches(pod.address, { ColorOsBatterySnapshot.encode(pod) }) { false })
+    }
 }

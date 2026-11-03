@@ -144,6 +144,7 @@ internal object ColorOsSystemBatteryBridge {
 
     fun clear(context: Context, device: BluetoothDevice) {
         if (!enabled) return
+        ColorOsBatterySnapshot.clear(context, device.address)
         // OPLUS 电量数组是独立通道：只清标准电量时，「我的设备」/蓝牙设置仍会显示断开前的
         // 左右耳和盒电量。断开时两处一起清。
         oplusRemoteDevice(context)?.let { remote ->

@@ -172,7 +172,7 @@
     <string name="documentation_troubleshooting_step_3">Attach LSPosed logs when reporting a problem, and note that logs may contain Bluetooth device identifiers.</string>
     <string name="documentation_offline_note">This is the offline core guide shipped with the APK. The website continues to provide the full support matrix and debugging notes.</string>
     <string name="sponsor_title">Support</string>
-    <string name="sponsor_qr_description">WeChat appreciation code for piter</string>
+    <string name="sponsor_qr_description">WeChat appreciation code for FUXI (ByteJuno)</string>
     <string name="sponsor_list_title">Public sponsor list</string>
     <string name="sponsor_list_empty">No public sponsors yet</string>
     <string name="about_tab">About</string>

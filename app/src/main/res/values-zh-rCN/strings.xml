@@ -173,7 +173,7 @@
     <string name="documentation_troubleshooting_step_3">反馈问题时请附 LSPosed 日志，并注意日志可能包含蓝牙地址等设备信息。</string>
     <string name="documentation_offline_note">此页面为随 APK 发布的离线核心文档；官网仍会提供更完整的机型支持状态与调试说明。</string>
     <string name="sponsor_title">赞助支持</string>
-    <string name="sponsor_qr_description">piter 的微信赞赏码</string>
+    <string name="sponsor_qr_description">FUXI（ByteJuno）的微信赞赏码</string>
     <string name="sponsor_list_title">公开赞助名单</string>
     <string name="sponsor_list_empty">暂无公开赞助者</string>
     <string name="about_tab">关于</string>

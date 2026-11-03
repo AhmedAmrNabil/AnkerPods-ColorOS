@@ -10,9 +10,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -22,14 +27,20 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.FileProvider
+import java.io.File
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.Locale
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 import moe.chenxy.huaweipods.BuildConfig
+import moe.chenxy.huaweipods.R
+import moe.chenxy.huaweipods.utils.ModuleResourceResolver
 import moe.chenxy.huaweipods.backend.soundcore.SoundcoreDeviceIdentifier
 import moe.chenxy.huaweipods.broadcast.HuaweiPodsBroadcastTrustPolicy
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
@@ -153,6 +164,9 @@ object ColorOsMyDevicesHook : HookContext() {
         runCatching { hookAirpodsFragment() }
             .onSuccess { Log.i(TAG, "AirpodsFragment hook installed") }
             .onFailure { Log.w(TAG, "AirpodsFragment hook failed", it) }
+        runCatching { hookAirpodsSettingActivity() }
+            .onSuccess { Log.i(TAG, "AirpodsSettingActivity hook installed") }
+            .onFailure { Log.w(TAG, "AirpodsSettingActivity hook failed", it) }
 
         val legacy = runCatching { hookLegacyDetailPage() }
         val preference = runCatching { hookPreferenceDetailPage() }
@@ -163,6 +177,7 @@ object ColorOsMyDevicesHook : HookContext() {
         if (app != null) {
             registerStatusReceiver(app)
             requestCurrentStatus(app)
+            ensureSoundcoreImageCached(app)
         } else {
             hookApplicationOnCreate()
         }
@@ -176,6 +191,7 @@ object ColorOsMyDevicesHook : HookContext() {
                 val app = instance as? Application ?: return@hookAfter
                 registerStatusReceiver(app)
                 requestCurrentStatus(app)
+                ensureSoundcoreImageCached(app)
             }
         }.onFailure { Log.w(TAG, "Unable to hook Application.onCreate", it) }
     }
@@ -467,6 +483,85 @@ object ColorOsMyDevicesHook : HookContext() {
         }.onFailure { Log.w(TAG, "OplusBluetoothDevice.setExtendFeatureStatus hook unavailable", it) }
     }
 
+    @Volatile
+    private var cachedSoundcoreUri: Uri? = null
+
+    @Volatile
+    private var cachedSoundcoreBitmap: Bitmap? = null
+
+    private fun ensureSoundcoreImageCached(context: Context): Uri? {
+        cachedSoundcoreUri?.let { return it }
+        return runCatching {
+            val dir = File(context.cacheDir, "device_image")
+            if (!dir.exists()) dir.mkdirs()
+
+            val filenames = listOf(
+                "IMG_soundcore_liberty_4_nc.webp",
+                "IMG_airpods_pro_a2dp_homepage.webp",
+                "IMG_airpods_a2dp_homepage.webp",
+                "IMG_airpods_pro_pairing_capsule.webp",
+                "IMG_airpods_pairing_capsule.webp",
+                "IMG_bt_a2dp_homepage.webp",
+                "IMG_bt_headset_homepage_gradient.webp",
+            )
+
+            val moduleRes = ModuleResourceResolver.resources(context)
+            val resId = moduleRes?.runCatching {
+                getIdentifier("soundcore_liberty_4_nc", "drawable", BuildConfig.APPLICATION_ID)
+            }?.getOrDefault(0)?.takeIf { it != 0 } ?: R.drawable.soundcore_liberty_4_nc
+
+            val bytes = moduleRes?.openRawResource(resId)?.use { it.readBytes() }
+            if (bytes != null && bytes.isNotEmpty()) {
+                var primaryFile: File? = null
+                for (fn in filenames) {
+                    val f = File(dir, fn)
+                    if (!f.exists() || f.length() != bytes.size.toLong()) {
+                        f.outputStream().use { it.write(bytes) }
+                    }
+                    if (primaryFile == null) primaryFile = f
+                }
+
+                val targetFile = primaryFile ?: File(dir, "IMG_soundcore_liberty_4_nc.webp")
+                val uri = FileProvider.getUriForFile(context, "com.oplus.mydevices.fileprovider", targetFile)
+                cachedSoundcoreUri = uri
+                uri
+            } else {
+                val targetFile = File(dir, "IMG_soundcore_liberty_4_nc.webp")
+                if (targetFile.exists() && targetFile.length() > 1000) {
+                    val uri = FileProvider.getUriForFile(context, "com.oplus.mydevices.fileprovider", targetFile)
+                    cachedSoundcoreUri = uri
+                    uri
+                } else null
+            }
+        }.onFailure {
+            Log.w(TAG, "Failed to cache Soundcore images", it)
+        }.getOrNull()
+    }
+
+    private fun getSoundcoreDrawable(context: Context): Drawable? {
+        val bitmap = cachedSoundcoreBitmap ?: runCatching {
+            val moduleRes = ModuleResourceResolver.resources(context)
+            val resId = moduleRes?.runCatching {
+                getIdentifier("soundcore_liberty_4_nc", "drawable", BuildConfig.APPLICATION_ID)
+            }?.getOrDefault(0)?.takeIf { it != 0 } ?: R.drawable.soundcore_liberty_4_nc
+            val bm = moduleRes?.let { BitmapFactory.decodeResource(it, resId) }
+            bm ?: runCatching {
+                val file = File(context.cacheDir, "device_image/IMG_soundcore_liberty_4_nc.webp")
+                if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+            }.getOrNull()
+        }.getOrNull()?.also { cachedSoundcoreBitmap = it } ?: return null
+        return BitmapDrawable(context.resources, bitmap)
+    }
+
+    private fun hasActiveSupportedDevice(): Boolean {
+        return latestBatteries.keys.any { isSupportedAddress(it) } ||
+            runCatching {
+                BluetoothAdapter.getDefaultAdapter()?.bondedDevices?.any { dev ->
+                    isSupportedDevice(dev) && isDeviceConnected(dev)
+                }
+            }.getOrNull() == true
+    }
+
     private fun hookIconHandler() {
         val cls = runCatching { findClass("aa.EA") }.getOrNull() ?: return
         runCatching {
@@ -481,9 +576,47 @@ object ColorOsMyDevicesHook : HookContext() {
             val method = cls.getDeclaredMethod("d", Int::class.javaPrimitiveType!!, BluetoothDevice::class.java)
             hookBefore(method) {
                 val dev = args.getOrNull(1) as? BluetoothDevice ?: return@hookBefore
-                if (isSupportedDevice(dev)) result = "IMG_bt_a2dp_homepage.webp"
+                if (isSupportedDevice(dev)) {
+                    val context = runCatching {
+                        cls.getDeclaredField("a").apply { isAccessible = true }.get(instance) as? Context
+                    }.getOrNull() ?: currentApplicationOrNull() ?: statusReceiverContext
+                    if (context != null) {
+                        val uri = ensureSoundcoreImageCached(context)
+                        if (uri != null) result = uri.toString()
+                    }
+                }
             }
         }.onFailure { Log.w(TAG, "IconHandler.d hook unavailable", it) }
+
+        runCatching {
+            val methodA = cls.getDeclaredMethod("a", Int::class.javaPrimitiveType!!, Boolean::class.javaPrimitiveType!!)
+            hookBefore(methodA) {
+                if (hasActiveSupportedDevice()) {
+                    val context = runCatching {
+                        cls.getDeclaredField("a").apply { isAccessible = true }.get(instance) as? Context
+                    }.getOrNull() ?: currentApplicationOrNull() ?: statusReceiverContext
+                    if (context != null) {
+                        val uri = ensureSoundcoreImageCached(context)
+                        if (uri != null) result = uri.toString()
+                    }
+                }
+            }
+        }.onFailure { Log.w(TAG, "IconHandler.a hook unavailable", it) }
+
+        runCatching {
+            val methodB = cls.getDeclaredMethod("b", Int::class.javaPrimitiveType!!, Boolean::class.javaPrimitiveType!!)
+            hookBefore(methodB) {
+                if (hasActiveSupportedDevice()) {
+                    val context = runCatching {
+                        cls.getDeclaredField("a").apply { isAccessible = true }.get(instance) as? Context
+                    }.getOrNull() ?: currentApplicationOrNull() ?: statusReceiverContext
+                    if (context != null) {
+                        val uri = ensureSoundcoreImageCached(context)
+                        if (uri != null) result = uri.toString()
+                    }
+                }
+            }
+        }.onFailure { Log.w(TAG, "IconHandler.b hook unavailable", it) }
     }
 
     private fun hookBlueToothScannerImpl() {
@@ -643,6 +776,68 @@ object ColorOsMyDevicesHook : HookContext() {
 
         if (fragCls != null) {
             runCatching {
+                val method = fragCls.getDeclaredMethod("onViewCreated", View::class.java, Bundle::class.java)
+                hookAfter(method) {
+                    val root = args.firstOrNull() as? View ?: return@hookAfter
+                    val macField = runCatching { fragCls.getDeclaredField("mMac").apply { isAccessible = true } }.getOrNull()
+                    val mac = macField?.get(instance) as? String
+                    if (mac != null && !isSupportedAddress(mac)) return@hookAfter
+
+                    val airpodsImageId = root.resources.getIdentifier("airpods_image", "id", root.context.packageName)
+                    val imgView = (if (airpodsImageId != 0) root.findViewById(airpodsImageId) else null)
+                        ?: runCatching {
+                            val bindingField = fragCls.getDeclaredField("mBinding").apply { isAccessible = true }
+                            val binding = bindingField.get(instance)
+                            val nField = binding?.javaClass?.getDeclaredField("n")?.apply { isAccessible = true }
+                            nField?.get(binding) as? ImageView
+                        }.getOrNull() ?: return@hookAfter
+
+                    fun applyHeroImage() {
+                        val currentMac = runCatching { macField?.get(instance) as? String }.getOrNull()
+                        if (currentMac != null && !isSupportedAddress(currentMac)) return
+                        val target = getSoundcoreDrawable(imgView.context) ?: return
+                        if (imgView.background != null || imgView.drawable !== target) {
+                            imgView.background = null
+                            imgView.setImageDrawable(target)
+                            imgView.scaleType = ImageView.ScaleType.FIT_CENTER
+                        }
+                    }
+
+                    applyHeroImage()
+
+                    imgView.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+                        override fun onPreDraw(): Boolean {
+                            if (!imgView.isAttachedToWindow) {
+                                imgView.viewTreeObserver.removeOnPreDrawListener(this)
+                                return true
+                            }
+                            applyHeroImage()
+                            return true
+                        }
+                    })
+                }
+            }.onFailure { Log.w(TAG, "AirpodsFragment.onViewCreated hook unavailable", it) }
+
+            runCatching {
+                val initDataMethod = fragCls.declaredMethods.firstOrNull { it.name == "initData" }
+                if (initDataMethod != null) {
+                    hookAfter(initDataMethod) {
+                        val macField = runCatching { fragCls.getDeclaredField("mMac").apply { isAccessible = true } }.getOrNull()
+                        val mac = macField?.get(instance) as? String
+                        if (mac != null && !isSupportedAddress(mac)) return@hookAfter
+                        val bindingField = fragCls.getDeclaredField("mBinding").apply { isAccessible = true }
+                        val binding = bindingField.get(instance) ?: return@hookAfter
+                        val nField = runCatching { binding.javaClass.getDeclaredField("n").apply { isAccessible = true } }.getOrNull()
+                        val imgView = nField?.get(binding) as? ImageView ?: return@hookAfter
+                        val target = getSoundcoreDrawable(imgView.context) ?: return@hookAfter
+                        imgView.background = null
+                        imgView.setImageDrawable(target)
+                        imgView.scaleType = ImageView.ScaleType.FIT_CENTER
+                    }
+                }
+            }.onFailure { Log.w(TAG, "AirpodsFragment.initData hook unavailable", it) }
+
+            runCatching {
                 val method = fragCls.getDeclaredMethod("showAirpodsBattery", IntArray::class.java)
                 hookBefore(method) {
                     val iArr = args.firstOrNull() as? IntArray ?: return@hookBefore
@@ -742,6 +937,69 @@ object ColorOsMyDevicesHook : HookContext() {
                 }
             }.onFailure { Log.w(TAG, "AirpodsData.d hook unavailable", it) }
         }
+    }
+
+    private fun hookAirpodsSettingActivity() {
+        val actCls = runCatching {
+            findClass("com.oplus.mydevices.bluetooth.airpods.AirpodsSettingActivity")
+        }.getOrNull() ?: return
+
+        fun applySettingImage(instance: Any?) {
+            if (instance == null) return
+            val devField = runCatching { actCls.getDeclaredField("w0").apply { isAccessible = true } }.getOrNull()
+            val dev = devField?.get(instance) as? BluetoothDevice
+            val addr = dev?.address ?: runCatching {
+                val act = instance as? Activity
+                act?.intent?.getStringExtra("address")
+                    ?: (act?.intent?.getParcelableExtra("device", BluetoothDevice::class.java) as? BluetoothDevice)?.address
+            }.getOrNull()
+            if (addr != null && !isSupportedAddress(addr)) return
+
+            val p1Method = runCatching { actCls.getDeclaredMethod("p1").apply { isAccessible = true } }.getOrNull()
+            val imgView = p1Method?.invoke(instance) as? ImageView ?: runCatching {
+                val m0Field = actCls.getDeclaredField("m0").apply { isAccessible = true }
+                val lazyVal = m0Field.get(instance)
+                lazyVal?.javaClass?.getMethod("getValue")?.invoke(lazyVal) as? ImageView
+            }.getOrNull() ?: return
+
+            val target = getSoundcoreDrawable(imgView.context) ?: return
+            if (imgView.background != null || imgView.drawable !== target) {
+                imgView.background = null
+                imgView.setImageDrawable(target)
+                imgView.scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+        }
+
+        runCatching {
+            val d2Method = actCls.declaredMethods.firstOrNull { it.name == "d2" && it.parameterTypes.size == 1 }
+            if (d2Method != null) {
+                hookAfter(d2Method) {
+                    applySettingImage(instance)
+                }
+            }
+        }.onFailure { Log.w(TAG, "AirpodsSettingActivity.d2 hook unavailable", it) }
+
+        runCatching {
+            val onResumeMethod = actCls.getDeclaredMethod("onResume")
+            hookAfter(onResumeMethod) {
+                applySettingImage(instance)
+                val p1Method = runCatching { actCls.getDeclaredMethod("p1").apply { isAccessible = true } }.getOrNull()
+                val imgView = p1Method?.invoke(instance) as? ImageView
+                if (imgView != null && imgView.tag != "soundcore_predraw_attached") {
+                    imgView.tag = "soundcore_predraw_attached"
+                    imgView.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+                        override fun onPreDraw(): Boolean {
+                            if (!imgView.isAttachedToWindow) {
+                                imgView.viewTreeObserver.removeOnPreDrawListener(this)
+                                return true
+                            }
+                            applySettingImage(instance)
+                            return true
+                        }
+                    })
+                }
+            }
+        }.onFailure { Log.w(TAG, "AirpodsSettingActivity.onResume hook unavailable", it) }
     }
 
     override fun onClose() {

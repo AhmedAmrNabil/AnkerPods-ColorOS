@@ -39,6 +39,7 @@ import moe.chenxy.huaweipods.broadcast.HuaweiPodsBroadcastTrustPolicy
 import moe.chenxy.huaweipods.platform.RomFamily
 import moe.chenxy.huaweipods.platform.RomIntegrationPolicy
 import moe.chenxy.huaweipods.utils.PodImageLoader
+import moe.chenxy.huaweipods.utils.PodImageLoader.asNotificationIcon
 import moe.chenxy.huaweipods.utils.resolveBluetoothDisplayName
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
@@ -354,7 +355,7 @@ class ColorOsLiveAlertReceiver : BroadcastReceiver() {
             case?.let { add("${context.getString(R.string.pod_case)} $it%") }
         }.joinToString("  ")
         val largeIcon = card.address.takeIf(String::isNotBlank)
-            ?.let { PodImageLoader.loadBoxBitmap(context, prefs, it, verifiedRoute = card.route) }
+            ?.let { PodImageLoader.loadNotificationBoxBitmap(context, prefs, it, verifiedRoute = card.route) }
             ?: BitmapFactory.decodeResource(
                 context.resources,
                 PodImageLoader.modelFallbackResId(
@@ -362,7 +363,7 @@ class ColorOsLiveAlertReceiver : BroadcastReceiver() {
                     PodImageResource.BOX,
                     R.drawable.img_box,
                 ),
-            )
+            )?.asNotificationIcon()
         val requestCode = if (card.address.isNotBlank()) card.address.hashCode() else 0
         val contentIntent = PendingIntent.getActivity(
             context,

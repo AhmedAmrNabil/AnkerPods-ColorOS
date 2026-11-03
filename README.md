@@ -31,19 +31,21 @@ HuaweiPods ColorOS 是一个使用独立应用 ID `io.github.artifical0.huaweipo
 
 > 下列机型共用一个 APK，不按型号单独分发。新增型号的 ColorOS 实机验证范围请分别查看。
 
-## 1.9.3.0（深度适配轮，本地验证构建）
+## 1.9.3.0（当前稳定版）
 
 - 流体云卡片新增降噪切换按钮（关 → 降噪 → 通透 → 关，按机型能力裁剪），点击直连蓝牙进程；降噪 / 低时延状态变化时卡片原地刷新。
 - 详情页低时延 / 佩戴开关改为「乐观写入 + 回读确认 + 超时回滚」，不再出现界面与耳机相反且永不回退；读取并使用写入成功标志。
 - 模块停用 / 热重载时还原宿主行（标题、摘要、可见性、无障碍描述、点击监听）；17.x Preference 行找不到系统文本 id 时保持宿主原样。
 - 断连即清电量、降噪、低时延、佩戴缓存；断开时同时清 OPLUS 六元电量数组；设备空间先还原图片再关线程池；快速连接弹窗图片标记不再串场。
 - 安全：MAC 回包动作与请求动作拆分（此前同名可被伪造）、流体云断连水位钳到真实 uptime 且只前进、适配器仍开启时拒绝伪造的 `STATE_OFF`。
-- 641 项单元测试通过，Lint 0 error。1.9.3.0 已覆盖安装到 PLK110 / ColorOS 17.0.0.105 / LSPosed API 102，四进程热重载 `restored=true failed=0`。
+- 修复 FreeClip 2 典藏版等竖长耳机盒图在通知和流体云中被裁切（#8）；设置页三段电量只改写与华为耳机电量一致的行，避免串到别的蓝牙设备；SystemUI 文本探针仅保留在 Debug 构建。
+- 蓝牙设置列表行、设备详细信息 / 已连接的设备页、设备空间首页卡片、控制中心蓝牙磁贴补全左 / 右 / 盒三段电量（新增可选作用域 `com.android.settings`、`com.android.systemui`）；热重载后设置页也能立即读到电量。
+- 753 项单元测试通过，Lint 0 error。PLK110 / ColorOS 17.0.0.105 与 OPD2515 / ColorOS 17.0.0.103（LSPosed API 102，一代 FreeClip）已实测覆盖安装热重载、流体云图标与设置页三段电量；FreeClip 2 典藏版等其他型号未实机验证。
 - 实机目视（耳机在连）：设备空间卡片显示华为官方图与电量，详情浮层 `左耳 100% · 右耳 100% · 耳机盒 50%`，流体云卡片 `HUAWEI FreeClip / L 100% R 100% 耳机盒 50% / 低时延已关闭 / [开启低时延]`，`card_*` 九个状态键完整落盘。
 - 实测缺陷与修复：ColorOS 17 的流体云卡片把整张卡当成一个点击区，**按钮点击不会派发给 `Notification.Action`**（连点 3 次「开启低时延」都只是走 contentIntent）。现在卡片点击直接打开模块耳机弹窗（三段电量 + 低时延开关），一次点击即可改状态；顺带修掉弹窗状态请求未共享身份导致三格电量恒为 `-` 的老问题。
-- versionCode 29。本检出只有 debug 签名，正式发布需用维护者固定签名重新打包；详见 [1.9.3.0 说明](.github/release-notes/1.9.3.0.md) 与 [深度适配记录](docs/coloros17-deep-adaptation-20261030.md)。
+- versionCode 29，沿用固定签名；GitHub 与独立 [LSPosed 仓库](https://github.com/Xposed-Modules-Repo/io.github.artifical0.huaweipods.coloros/releases) 同步同一稳定版 APK。详见 [1.9.3.0 说明](.github/release-notes/1.9.3.0.md) 与 [深度适配记录](docs/coloros17-deep-adaptation-20261030.md)。
 
-## 1.9.2.1
+## 1.9.2.1（前一稳定版）
 
 - 选择性移植上游 1.9.2：新增 FreeBuds 4 独立型号识别及 4E 系列基础控制复用；修正 FreeBuds 7i 固定 / 头部跟踪空间音频映射。
 - FreeClip 2 设置显示耳机回读状态，返回前台自动刷新；修复严格 TLV 解析、跨设备 / 页面会话隔离及低时延回读确认后才保存自动保持策略。
@@ -52,7 +54,7 @@ HuaweiPods ColorOS 是一个使用独立应用 ID `io.github.artifical0.huaweipo
 - 629 项单元测试通过，Lint 无错误，Release 构建及 Android 测试代码编译通过。PLK110 / ColorOS 17.0.0.105 / 一代 FreeClip 已实测官方弹窗、应用内及设备空间图片、电量、流体云和两次详情热重载；本轮未做开关盒及其他新增型号实测。
 - versionCode 28，沿用固定签名；GitHub 与独立 [LSPosed 仓库](https://github.com/Xposed-Modules-Repo/io.github.artifical0.huaweipods.coloros/releases) 同步同一稳定版 APK。详见 [发布说明与验证限制](.github/release-notes/1.9.2.1.md)。
 
-## 1.9.1.1（前一稳定版）
+## 1.9.1.1
 
 - 新增 FreeBuds 6 型号识别、官方图片身份、电量、三档降噪及独立设置页，不复用 6i 的通透或音效编号。
 - 识别 FreeClip 2 典藏版产品 `000173`，与普通版 `000167` 官方图片身份隔离；未获取官方图时仅显示系列示意图。FreeClip 2 系列新增点头 / 摇头来电动作及“嘈杂环境大音量”设置和回读，纠正原“声音质量优先”的命名。
@@ -178,7 +180,8 @@ HuaweiPods ColorOS 是一个使用独立应用 ID `io.github.artifical0.huaweipo
 
    - 必选：`com.android.bluetooth`、`com.heytap.mydevices`、`com.heytap.accessory`（`com.heytap.accessory` 用于系统“快速设备连接”官方弹窗）
    - 可选：`com.oplus.wirelesssettings`（系统蓝牙设置中的耳机电量与“耳机设置”入口）
-- 可选：`com.android.settings`（蓝牙「设备详细信息」页的三段电量）
+   - 可选：`com.android.settings`（蓝牙「设备详细信息」页的三段电量）
+   - 可选：`com.android.systemui`（控制中心蓝牙磁贴与流体云胶囊的三段电量）
    - 可选：`com.huawei.smartaudio`（已安装华为智慧音频时，用于 FreeClip 2 空间音频与自定义音效同步）
 
 4. 在 HuaweiPods 内重启相关作用域，或重启手机。

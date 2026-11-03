@@ -22,6 +22,9 @@ import moe.chenxy.huaweipods.pods.isSupported
 object PodImageLoader {
     private const val MAX_CUSTOM_IMAGE_DIMENSION = 768
 
+    /** 通知大图标的方形画布边长：足够清晰，跨进程传递也不至于过大（192² ARGB ≈ 144 KB）。 */
+    private const val NOTIFICATION_ICON_SIZE = 192
+
     /** System hosts read fallback assets through the app, independent of host resource caches. */
     fun loadDeviceSpaceBitmap(context: Context, address: String, route: HuaweiDeviceRoute): Bitmap? =
         decodeUri(context, PodImagePrefs.deviceSpaceImageUri(address, route))
@@ -167,6 +170,22 @@ object PodImageLoader {
         )
     }
 
+    /**
+     * 通知 / 流体云用的耳机盒大图标。
+     *
+     * ColorOS 会把大图标居中裁成方形甚至圆形，竖长的盒子图（如 FreeClip 2 典藏版 237×365）
+     * 顶部和底部会被直接裁掉。这里先按可见内容等比缩放进方形透明画布，再交给系统。
+     */
+    fun loadNotificationBoxBitmap(
+        context: Context,
+        prefs: SharedPreferences,
+        address: String,
+        verifiedRoute: HuaweiDeviceRoute? = null,
+    ): Bitmap? = loadBoxBitmap(context, prefs, address, verifiedRoute)?.asNotificationIcon()
+
+    /** 把任意比例的图片收进方形透明画布，供通知大图标使用。 */
+    fun Bitmap.asNotificationIcon(): Bitmap =
+        withIslandPadding(contentScale = NOTIFICATION_ICON_CONTENT_SCALE, canvasSize = NOTIFICATION_ICON_SIZE)
 
     fun loadIslandLeftBitmap(context: Context, prefs: SharedPreferences, address: String): Bitmap? {
         return loadBitmapWithCustomFallback(
@@ -191,23 +210,15 @@ object PodImageLoader {
     }
 
     /** 为顶部小尺寸图标预留透明边距，避免耳机柄被系统裁切。 */
-    private fun Bitmap.withIslandPadding(contentScale: Float = 0.90f): Bitmap {
+    private fun Bitmap.withIslandPadding(contentScale: Float = 0.90f, canvasSize: Int = 96): Bitmap {
         // 焦点通知会跨进程传递 Icon，限制像素尺寸以避免 Binder 与内存压力。
-        val canvasSize = 96
         val sourceBounds = visibleBounds() ?: Rect(0, 0, width, height)
-        val scale = minOf(
-            canvasSize * contentScale / sourceBounds.width().coerceAtLeast(1),
-            canvasSize * contentScale / sourceBounds.height().coerceAtLeast(1),
-        )
-        val targetWidth = sourceBounds.width() * scale
-        val targetHeight = sourceBounds.height() * scale
-        val left = (canvasSize - targetWidth) / 2f
-        val top = (canvasSize - targetHeight) / 2f
+        val target = squareFitBounds(sourceBounds.width(), sourceBounds.height(), canvasSize, contentScale)
         return Bitmap.createBitmap(canvasSize, canvasSize, Bitmap.Config.ARGB_8888).also { output ->
             Canvas(output).drawBitmap(
                 this,
                 sourceBounds,
-                RectF(left, top, left + targetWidth, top + targetHeight),
+                RectF(target.left, target.top, target.right, target.bottom),
                 Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
             )
         }

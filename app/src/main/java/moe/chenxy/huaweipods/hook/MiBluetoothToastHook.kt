@@ -24,6 +24,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import moe.chenxy.huaweipods.utils.ModuleResourceResolver
 import moe.chenxy.huaweipods.utils.PodImageLoader
+import moe.chenxy.huaweipods.utils.PodImageLoader.asNotificationIcon
 import moe.chenxy.huaweipods.utils.notificationDisplayName
 import moe.chenxy.huaweipods.broadcast.HuaweiPodsBroadcastTrustPolicy
 import moe.chenxy.huaweipods.config.ConfigManager
@@ -324,13 +325,13 @@ object MiBluetoothToastHook : HookContext() {
                 } else {
                     null
                 }
-                val headsetBitmap = PodImageLoader.loadBoxBitmap(
+                val headsetBitmap = PodImageLoader.loadNotificationBoxBitmap(
                     context = context,
                     prefs = prefs,
                     address = address,
                     verifiedRoute = deviceRoute,
                 )
-                    ?: BitmapFactory.decodeResource(moduleResources, R.drawable.img_box)
+                    ?: BitmapFactory.decodeResource(moduleResources, R.drawable.img_box)?.asNotificationIcon()
                 if (headsetBitmap == null) {
                     Log.e("HuaweiPods", "createPodsNotification: headset bitmap null")
                     return
@@ -399,8 +400,8 @@ object MiBluetoothToastHook : HookContext() {
                     lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 },
             )
-            val largeIcon = PodImageLoader.loadBoxBitmap(context, prefs, address)
-                ?: BitmapFactory.decodeResource(moduleResources, R.drawable.img_box)
+            val largeIcon = PodImageLoader.loadNotificationBoxBitmap(context, prefs, address)
+                ?: BitmapFactory.decodeResource(moduleResources, R.drawable.img_box)?.asNotificationIcon()
             val notification = Notification.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                 .setContentTitle(deviceName)
@@ -452,8 +453,8 @@ object MiBluetoothToastHook : HookContext() {
                 },
             )
             val largeIcon = address.takeIf(String::isNotBlank)
-                ?.let { PodImageLoader.loadBoxBitmap(context, prefs, it) }
-                ?: BitmapFactory.decodeResource(moduleResources, R.drawable.img_box)
+                ?.let { PodImageLoader.loadNotificationBoxBitmap(context, prefs, it) }
+                ?: BitmapFactory.decodeResource(moduleResources, R.drawable.img_box)?.asNotificationIcon()
             val notification = Notification.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                 .setContentTitle(moduleResources.getString(R.string.low_battery_reminder_title, deviceName))

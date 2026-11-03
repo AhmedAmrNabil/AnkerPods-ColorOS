@@ -83,6 +83,31 @@ internal object ColorOsBatterySummaryInjector {
     fun currentTriple(): ColorOsBatteryTriple? = colorOsBatteryTriple(currentPod())
 
     /**
+     * 按每一副在线耳机各自的电量尝试改写，返回第一条命中的结果。
+     *
+     * 改写规则会核对宿主文本里的数字，所以同时连着多副耳机时，每一行只会用它自己的电量补全。
+     */
+    fun rewriteForAnyPod(text: CharSequence?, rewrite: Rewrite, hostContext: Context? = null): String? {
+        if (text.isNullOrBlank() || !text.contains('%')) return null
+        // API 102 热重载后 Application.onCreate 不会再跑，新一代代码只能从正在写文本的视图拿 Context，
+        // 否则既收不到广播也读不到跨进程快照，页面一直停在宿主的单值电量。
+        if (appContext == null) hostContext?.let { appContext = it.applicationContext ?: it }
+        if (!receiverRegistered.get()) {
+            // 没有广播接收器时内存表不会再更新，以蓝牙进程写的快照为准（断开时快照被清，这里也跟着清）。
+            appContext?.let { context ->
+                val pod = ColorOsBatterySnapshot.load(context)
+                ColorOsPodBatteryStore.clear(null)
+                pod?.let(ColorOsPodBatteryStore::put)
+            }
+        } else if (ColorOsPodBatteryStore.size() == 0) {
+            appContext?.let { context -> ColorOsBatterySnapshot.restoreInto(context) }
+        }
+        return ColorOsPodBatteryStore.snapshot().asSequence()
+            .mapNotNull(::colorOsBatteryTriple)
+            .firstNotNullOfOrNull { triple -> rewrite.apply(text, triple) }
+    }
+
+    /**
      * 当前用于卡片的那条耳机记录。
      *
      * 与 [currentTriple] 同一条选择策略（段数最多者），但保留地址和名字——seedling 卡片要按
@@ -99,8 +124,7 @@ internal object ColorOsBatterySummaryInjector {
     fun patch(tag: String, rewrite: Rewrite, enabled: () -> Boolean = { true }) {
         if (!enabled()) return
         runCatching {
-            val triple = currentTriple()
-            if (triple == null) {
+            if (currentTriple() == null) {
                 Log.i(tag, "battery summary scan skipped: no battery data")
                 return
             }
@@ -118,7 +142,7 @@ internal object ColorOsBatterySummaryInjector {
                 while (pending.isNotEmpty() && visited++ < 512) {
                     val view = pending.removeFirst()
                     if (view is TextView) {
-                        val rewritten = rewrite.apply(view.text, triple)
+                        val rewritten = rewriteForAnyPod(view.text, rewrite)
                         if (rewritten != null) {
                             view.text = rewritten
                             patched++
@@ -129,7 +153,7 @@ internal object ColorOsBatterySummaryInjector {
                     }
                 }
             }
-            Log.i(tag, "battery summary scan roots=${roots.size} patched=$patched triple=$triple")
+            Log.i(tag, "battery summary scan roots=${roots.size} patched=$patched")
         }.onFailure { Log.w(tag, "unable to patch battery summary", it) }
     }
 

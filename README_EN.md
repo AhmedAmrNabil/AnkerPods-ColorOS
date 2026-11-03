@@ -24,7 +24,17 @@ HuaweiPods ColorOS is an Android 15+ Xposed module with the independent applicat
 
 The unified build supports the 20 models below in one APK. Model-specific test APKs are no longer distributed; newly added models still need ColorOS device testing.
 
-## 1.9.2.1 (current stable release)
+## 1.9.3.0 (current stable release)
+
+- Fluid Cloud (Live Alert) cards gain an ANC cycle button for models that support it, refresh in place on ANC / low-latency changes, and tapping the card opens the module's earphone popup (ColorOS 17 does not dispatch card button actions).
+- Low-latency / wear-detection switches use optimistic write, readback confirmation and a 3-second rollback. Disconnect clears cached battery, ANC, low-latency and wear state, including the OPLUS battery array.
+- Bluetooth settings rows, the device-details / connected-devices page, Device Space home cards and the Control Center Bluetooth tile show left / right / case battery (new optional scopes `com.android.settings` and `com.android.systemui`). Rows are rewritten only when their battery matches a Huawei earphone, and settings pages pick up battery right after a hot reload.
+- Fixes tall case images, such as the FreeClip 2 Collector Edition, being cropped in notifications and Fluid Cloud (#8). The SystemUI text probe now ships in Debug builds only.
+- Security: separates the MAC reply action from the request action, clamps the Fluid Cloud disconnect watermark to real uptime, and rejects a forged `STATE_OFF` while the adapter is still on.
+- 753 unit tests pass and Lint has no errors. First-generation FreeClip on PLK110 / ColorOS 17.0.0.105 and OPD2515 / ColorOS 17.0.0.103 (LSPosed API 102) was checked for in-place hot reload, Fluid Cloud icons and three-part settings battery; FreeClip 2 Collector Edition and other models were not tested on device.
+- VersionCode 29 retains the fixed distribution certificate. GitHub and the independent [LSPosed repository](https://github.com/Xposed-Modules-Repo/io.github.artifical0.huaweipods.coloros/releases) distribute the same stable APK. See [release notes and limitations](.github/release-notes/1.9.3.0.md).
+
+## 1.9.2.1 (previous stable release)
 
 - Selectively ports upstream 1.9.2: adds a separate FreeBuds 4 identity with shared 4E-family basic controls, and corrects FreeBuds 7i fixed/head-tracking spatial-audio mapping.
 - FreeClip 2 settings use device readback and refresh on resume. Strict TLV parsing, device/page session isolation and confirmed low-latency policy commits prevent stale or unconfirmed writes from changing saved settings.
@@ -33,7 +43,7 @@ The unified build supports the 20 models below in one APK. Model-specific test A
 - 629 unit tests passed; Lint has no errors, Release assembly and Android-test compilation pass. First-generation FreeClip on PLK110 / ColorOS 17.0.0.105 was checked for the official popup, app and Device Space images, battery, Live Alerts and two in-place detail hot reloads. Lid-close/reopen and other new models were not tested in this round.
 - VersionCode 28 retains the fixed distribution certificate. GitHub and the independent [LSPosed repository](https://github.com/Xposed-Modules-Repo/io.github.artifical0.huaweipods.coloros/releases) distribute the same stable APK. See [release notes and limitations](.github/release-notes/1.9.2.1.md).
 
-## 1.9.1.1 (previous stable release)
+## 1.9.1.1
 
 - Adds FreeBuds 6 model recognition, official image identity, captured ANC levels and a dedicated controls page; keeps FreeBuds 6 distinct from 6i.
 - Adds FreeClip 2 Collector Edition product identity `000173`, separate from ordinary `000167` images. FreeClip 2 gains confirmed nod/shake call actions and noisy-environment volume-boost readback, replacing the incorrect quality-priority label. Bundled family illustrations remain the fallback until official images are available.
@@ -133,7 +143,8 @@ The table lists currently integrated capabilities. Unlisted official features sh
 3. Select the scopes for your system:
    - Required: `com.android.bluetooth`, `com.heytap.mydevices`, and `com.heytap.accessory` (`com.heytap.accessory` enables the system Quick Device Connect popup).
    - Optional: `com.oplus.wirelesssettings` (earphone battery and settings entry in the system Bluetooth settings).
-- Optional: `com.android.settings` (three-part battery on the Bluetooth device-details page).
+   - Optional: `com.android.settings` (three-part battery on the Bluetooth device-details page).
+   - Optional: `com.android.systemui` (three-part battery on the Control Center Bluetooth tile and Fluid Cloud capsule).
    - Optional: `com.huawei.smartaudio` (when Huawei AI Life/Smart Audio is installed, for FreeClip 2 spatial-audio and custom-EQ synchronization).
 4. Reboot the phone, or restart the scoped apps from HuaweiPods.
 5. On ColorOS 16+, open **ColorOS Fluid Cloud** in HuaweiPods settings and enable **Live alerts** in the system notification settings.

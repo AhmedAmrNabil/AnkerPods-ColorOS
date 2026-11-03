@@ -64,9 +64,29 @@ class ColorOsSettingsBatteryTextTest {
     @Test
     fun `clamps out of range values`() {
         assertEquals(
-            "使用中，电量：左 100%，右 0%",
-            ColorOsSettingsBatteryText.rewrite("使用中，电量：左 120%，右 -5%", 120, -5, null),
+            "使用中，电量：左 100%，右 0%，盒 100%",
+            ColorOsSettingsBatteryText.rewrite("使用中，电量：左 100%，右 0%", 120, -5, 130),
         )
+    }
+
+    @Test
+    fun `list row of another headset is left untouched`() {
+        // 同时连着别的耳机：宿主行的数字不是这副耳机的，不能拿我们的电量去覆盖。
+        assertNull(ColorOsSettingsBatteryText.rewrite("使用中，电量：左 60%，右 70%", 100, 100, 45))
+        assertNull(ColorOsSettingsBatteryText.rewrite("使用中，电量：左 100%，右 70%", 100, 100, 45))
+    }
+
+    @Test
+    fun `list row needs at least one comparable part`() {
+        assertNull(ColorOsSettingsBatteryText.rewrite("使用中，电量：左 100%", null, 90, 45))
+    }
+
+    @Test
+    fun `single value of another device is left untouched`() {
+        val triple = ColorOsBatteryTriple(left = 97, right = 98, case = 100)
+        assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("已连接。电量：60%。", triple))
+        // 盒子电量不会进入系统单值，不能作为匹配依据。
+        assertNull(ColorOsSettingsBatteryText.rewriteSingleValue("已连接。电量：100%。", triple))
     }
 
     @Test

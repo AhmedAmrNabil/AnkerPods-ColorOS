@@ -9,6 +9,7 @@ import android.widget.TextView
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.WeakHashMap
+import moe.chenxy.huaweipods.BuildConfig
 
 /**
  * 原生蓝牙磁贴直接写 QSTile.State，并不调用 TileService 的 Tile.setSubtitle。
@@ -41,9 +42,13 @@ internal object ColorOsSystemUiBatteryHook : HookContext() {
             ) { (instance as? Application)?.let(::attachSource) }
         }.onFailure { Log.w(TAG, "SystemUI application hook unavailable", it) }
         currentApplicationOrNull()?.let(::attachSource)
-        runCatching { hookBatteryText() }
-            .onSuccess { Log.d(TAG, "SystemUI battery text probe installed") }
-            .onFailure { Log.w(TAG, "SystemUI battery text probe unavailable", it) }
+        // 排查用探针：会在 SystemUI 每次写文本时运行，并记录带 % 的界面文字（可能含通知内容），
+        // 所以只在 Debug 构建安装。
+        if (BuildConfig.DEBUG) {
+            runCatching { hookBatteryText() }
+                .onSuccess { Log.d(TAG, "SystemUI battery text probe installed") }
+                .onFailure { Log.w(TAG, "SystemUI battery text probe unavailable", it) }
+        }
     }
 
     private fun attachSource(context: Context) {

@@ -14,6 +14,23 @@ internal object ColorOsSettingsBatteryText {
 
     /** 摘要里出现这些字才算"电量行"，避免误改别的设置项文本。 */
     private val PART_MARKERS = listOf("左", "右", "盒")
+    private val HOST_LEFT = Regex("""左\D{0,2}?(\d{1,3})\s*%""")
+    private val HOST_RIGHT = Regex("""右\D{0,2}?(\d{1,3})\s*%""")
+
+    /**
+     * 宿主文本里的数字必须属于这副耳机。
+     *
+     * 设置页的 TextView 不带设备地址，只看文本形状会把别的蓝牙耳机的电量也换成我们的数字。
+     * 宿主显示的值来自模块写入系统的同一份电量，所以两边都有的段必须相等，且至少有一段可比。
+     */
+    private fun hostPartsMatch(body: String, left: Int?, right: Int?): Boolean {
+        val pairs = listOf(HOST_LEFT.find(body) to left, HOST_RIGHT.find(body) to right)
+            .mapNotNull { (match, ours) ->
+                val host = match?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
+                ours?.let { host to it.coerceIn(0, 100) }
+            }
+        return pairs.isNotEmpty() && pairs.all { (host, ours) -> host == ours }
+    }
 
     /**
      * 把 `prefix + 左/右[，盒]` 重写成三段；认不出来或没有可用数据时返回 `null`（保持原样）。
@@ -27,6 +44,7 @@ internal object ColorOsSettingsBatteryText {
         if (separator < 0 || separator == raw.lastIndex) return null
         val body = raw.substring(separator + 1)
         if (PART_MARKERS.none { body.contains(it) }) return null
+        if (!hostPartsMatch(body, left, right)) return null
         // 英文模板里冒号后面通常还有个空格（`battery: 左 98%`），改写时原样保留。
         val leading = body.takeWhile { it == ' ' }
         val parts = buildList {
@@ -64,6 +82,10 @@ internal object ColorOsSettingsBatteryText {
         val prefix = raw.substring(0, separator)
         if (CONNECTION_MARKERS.none { prefix.contains(it, ignoreCase = true) }) return null
         val match = SINGLE_VALUE.matchEntire(raw.substring(separator + 1)) ?: return null
+        // 宿主单值来自模块写入系统的某一只耳机电量（真机见过 `98%` 对应左 97 / 右 98）；
+        // 与任何一只在线耳机都对不上，说明这一行是别的蓝牙设备。
+        val hostValue = match.groupValues[1].toIntOrNull() ?: return null
+        if (listOfNotNull(triple.left, triple.right).none { it.coerceIn(0, 100) == hostValue }) return null
         val parts = buildList {
             triple.left?.let { add("左 ${it.coerceIn(0, 100)}%") }
             triple.right?.let { add("右 ${it.coerceIn(0, 100)}%") }

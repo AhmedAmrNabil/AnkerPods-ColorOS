@@ -50,6 +50,8 @@ object HuaweiPodsBroadcastTrustPolicy {
     )
 
     private val myDevicesStateActions = setOf(
+        HuaweiPodsAction.ACTION_PODS_CONNECTED,
+        HuaweiPodsAction.ACTION_PODS_DISCONNECTED,
         HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED,
         HuaweiPodsAction.ACTION_PODS_ANC_CHANGED,
         HuaweiPodsAction.ACTION_PODS_DISCONNECTED,

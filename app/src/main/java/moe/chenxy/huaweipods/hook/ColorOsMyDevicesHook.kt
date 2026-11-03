@@ -76,10 +76,46 @@ object ColorOsMyDevicesHook : HookContext() {
     private val latestBatteries = ConcurrentHashMap<String, BatteryParams>()
     private val latestSummaries = ConcurrentHashMap<String, String>()
     private val latestAncModes = ConcurrentHashMap<String, NoiseControlMode>()
+    private val latestAncAdaptive = ConcurrentHashMap<String, Boolean>()
     private val latestLowLatency = ConcurrentHashMap<String, Boolean>()
     private val latestWearDetection = ConcurrentHashMap<String, Boolean>()
     private val toggleWrites = ColorOsToggleWriteLedger()
     private val hookedBindMethods = ConcurrentHashMap.newKeySet<Method>()
+    private const val EXTEND_FEATURE_MASK = 1581 or 2048 or 8192
+
+    private fun isDeviceConnected(device: BluetoothDevice?): Boolean {
+        if (device == null) return false
+        return runCatching {
+            val method = device.javaClass.methods.firstOrNull {
+                it.name == "isConnected" && it.parameterCount in 0..1
+            } ?: return@runCatching false
+            when (method.parameterCount) {
+                0 -> method.invoke(device) as? Boolean ?: false
+                else -> method.invoke(device, BluetoothDevice.TRANSPORT_AUTO) as? Boolean ?: false
+            }
+        }.getOrElse { false }
+    }
+
+    private fun getFeatureStatus(address: String, feat: Int): Int? {
+        val upper = address.uppercase()
+        return when (feat) {
+            4 -> {
+                val mode = latestAncModes[upper] ?: NoiseControlMode.OFF
+                val isAdaptive = latestAncAdaptive[upper] == true
+                when (mode) {
+                    NoiseControlMode.OFF -> 1
+                    NoiseControlMode.NOISE_CANCELLATION -> if (isAdaptive) 4 else 2
+                    NoiseControlMode.TRANSPARENCY -> 3
+                    else -> 1
+                }
+            }
+            2048 -> 0 // both earbuds worn (unblocks IconTextSelector clicks on ANC & Adaptive)
+            8192 -> 1 // single-ear noise switch supported
+            32 -> 1 // wear detection supported
+            4096 -> if (latestLowLatency[upper] == true) 1 else 0
+            else -> 0
+        }
+    }
 
     fun isSupportedDevice(device: BluetoothDevice?): Boolean {
         if (device == null) return false
@@ -114,6 +150,9 @@ object ColorOsMyDevicesHook : HookContext() {
         runCatching { hookLiteCardWidget() }
             .onSuccess { Log.i(TAG, "LiteCardWidget hook installed") }
             .onFailure { Log.w(TAG, "LiteCardWidget hook failed", it) }
+        runCatching { hookAirpodsFragment() }
+            .onSuccess { Log.i(TAG, "AirpodsFragment hook installed") }
+            .onFailure { Log.w(TAG, "AirpodsFragment hook failed", it) }
 
         val legacy = runCatching { hookLegacyDetailPage() }
         val preference = runCatching { hookPreferenceDetailPage() }
@@ -139,6 +178,18 @@ object ColorOsMyDevicesHook : HookContext() {
                 requestCurrentStatus(app)
             }
         }.onFailure { Log.w(TAG, "Unable to hook Application.onCreate", it) }
+    }
+
+    private fun dispatchAncSelect(context: Context, address: String, mode: NoiseControlMode, isAdaptive: Boolean, subMode: Int?) {
+        val intent = Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
+            putExtra("status", mode.broadcastStatus)
+            putExtra("address", address)
+            putExtra("is_adaptive", isAdaptive)
+            if (subMode != null) putExtra("submode", subMode)
+            addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+        }
+        runCatching { context.sendIdentitySharingBroadcast(Intent(intent).apply { setPackage(BuildConfig.APPLICATION_ID) }) }
+        runCatching { context.sendIdentitySharingBroadcast(Intent(intent).apply { setPackage(BLUETOOTH_PACKAGE) }) }
     }
 
     private fun hookOplusBluetoothAdapterWrapper() {
@@ -170,19 +221,40 @@ object ColorOsMyDevicesHook : HookContext() {
             hookBefore(method) {
                 val addr = args.firstOrNull() as? String ?: return@hookBefore
                 if (isSupportedAddress(addr)) {
-                    val battery = latestBatteries[addr.uppercase()]
-                    if (battery != null) {
-                        result = colorOsTwsBatteryInfo(battery)
-                    } else {
-                        val dev = bluetoothDevice(addr)
-                        val level = runCatching {
-                            dev?.javaClass?.getMethod("getBatteryLevel")?.invoke(dev) as? Int
-                        }.getOrNull()?.coerceIn(0, 100) ?: 100
-                        result = intArrayOf(level, level, level, 2, 2, 2)
+                    val dev = bluetoothDevice(addr)
+                    if (!isDeviceConnected(dev)) return@hookBefore
+                    val battery = latestBatteries[addr.uppercase()] ?: return@hookBefore
+                    val info = colorOsTwsBatteryInfo(battery)
+                    if (info[2] <= 0 || info[5] == COLOR_OS_CHARGE_DISCONNECTED) {
+                        val prevCase = battery.case ?: latestBatteries[addr.uppercase()]?.case
+                        info[2] = if (prevCase != null && prevCase.isConnected && prevCase.battery > 0) prevCase.battery else 100
+                        info[5] = if (prevCase?.isCharging == true) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
                     }
+                    result = info
                 }
             }
         }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.o hook unavailable", it) }
+
+        runCatching {
+            val nMethod = cls.declaredMethods.firstOrNull { it.name == "n" && it.parameterTypes.size == 2 }
+            if (nMethod != null) {
+                hookBefore(nMethod) {
+                    val addr = args.firstOrNull() as? String ?: return@hookBefore
+                    if (isSupportedAddress(addr)) {
+                        val dev = bluetoothDevice(addr)
+                        if (!isDeviceConnected(dev)) return@hookBefore
+                        val battery = latestBatteries[addr.uppercase()] ?: return@hookBefore
+                        val info = colorOsTwsBatteryInfo(battery)
+                        if (info[2] <= 0 || info[5] == COLOR_OS_CHARGE_DISCONNECTED) {
+                            val prevCase = battery.case ?: latestBatteries[addr.uppercase()]?.case
+                            info[2] = if (prevCase != null && prevCase.isConnected && prevCase.battery > 0) prevCase.battery else 100
+                            info[5] = if (prevCase?.isCharging == true) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+                        }
+                        result = info
+                    }
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.n hook unavailable", it) }
 
         // l(BluetoothDevice): getAirpodsModel -> String
         runCatching {
@@ -208,7 +280,7 @@ object ColorOsMyDevicesHook : HookContext() {
             val method = cls.getDeclaredMethod("u", BluetoothDevice::class.java)
             hookBefore(method) {
                 val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
-                if (isSupportedDevice(dev)) result = 1581
+                if (isSupportedDevice(dev)) result = EXTEND_FEATURE_MASK
             }
         }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.u hook unavailable", it) }
 
@@ -217,7 +289,7 @@ object ColorOsMyDevicesHook : HookContext() {
             val method = cls.getDeclaredMethod("v", String::class.java)
             hookBefore(method) {
                 val addr = args.firstOrNull() as? String ?: return@hookBefore
-                if (isSupportedAddress(addr)) result = 1581
+                if (isSupportedAddress(addr)) result = EXTEND_FEATURE_MASK
             }
         }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.v hook unavailable", it) }
 
@@ -227,14 +299,8 @@ object ColorOsMyDevicesHook : HookContext() {
             hookBefore(method) {
                 val addr = args.firstOrNull() as? String ?: return@hookBefore
                 val feat = args.getOrNull(1) as? Int ?: return@hookBefore
-                if (feat == 4 && isSupportedAddress(addr)) {
-                    val mode = latestAncModes[addr.uppercase()] ?: NoiseControlMode.OFF
-                    result = when (mode) {
-                        NoiseControlMode.OFF -> 1
-                        NoiseControlMode.NOISE_CANCELLATION -> 2
-                        NoiseControlMode.TRANSPARENCY -> 3
-                        else -> 1
-                    }
+                if (isSupportedAddress(addr)) {
+                    getFeatureStatus(addr, feat)?.let { result = it }
                 }
             }
         }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.y hook unavailable", it) }
@@ -245,14 +311,8 @@ object ColorOsMyDevicesHook : HookContext() {
             hookBefore(method) {
                 val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
                 val feat = args.getOrNull(1) as? Int ?: return@hookBefore
-                if (feat == 4 && isSupportedDevice(dev)) {
-                    val mode = latestAncModes[dev.address.uppercase()] ?: NoiseControlMode.OFF
-                    result = when (mode) {
-                        NoiseControlMode.OFF -> 1
-                        NoiseControlMode.NOISE_CANCELLATION -> 2
-                        NoiseControlMode.TRANSPARENCY -> 3
-                        else -> 1
-                    }
+                if (isSupportedDevice(dev)) {
+                    getFeatureStatus(dev.address, feat)?.let { result = it }
                 }
             }
         }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.x hook unavailable", it) }
@@ -270,23 +330,20 @@ object ColorOsMyDevicesHook : HookContext() {
                 val feat = args.getOrNull(1) as? Int ?: return@hookBefore
                 val value = args.getOrNull(2) as? Int ?: return@hookBefore
                 if (feat == 4 && isSupportedAddress(addr)) {
-                    val mode = when (value) {
-                        1 -> NoiseControlMode.OFF
-                        2 -> NoiseControlMode.NOISE_CANCELLATION
-                        3 -> NoiseControlMode.TRANSPARENCY
-                        else -> NoiseControlMode.OFF
+                    val (mode, isAdaptive, subMode) = when (value) {
+                        1 -> Triple(NoiseControlMode.OFF, false, null)
+                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, 0)
+                        3 -> Triple(NoiseControlMode.TRANSPARENCY, false, null)
+                        4 -> Triple(NoiseControlMode.NOISE_CANCELLATION, true, 3)
+                        else -> Triple(NoiseControlMode.OFF, false, null)
                     }
                     latestAncModes[addr.uppercase()] = mode
+                    latestAncAdaptive[addr.uppercase()] = isAdaptive
                     refreshQuickControls(addr.uppercase())
+                    notifyAirpodsNoiseMode(addr, mode, isAdaptive)
                     val context = currentApplicationOrNull() ?: statusReceiverContext
                     if (context != null) {
-                        val intent = Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
-                            setPackage(BLUETOOTH_PACKAGE)
-                            putExtra("status", mode.broadcastStatus)
-                            putExtra("address", addr)
-                            addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-                        }
-                        context.sendBroadcast(intent)
+                        dispatchAncSelect(context, addr, mode, isAdaptive, subMode)
                     }
                     result = null
                 }
@@ -301,11 +358,23 @@ object ColorOsMyDevicesHook : HookContext() {
 
         fun extractDevice(inst: Any?): BluetoothDevice? {
             if (inst == null) return null
-            return runCatching {
-                inst.javaClass.declaredFields.firstOrNull { it.type == BluetoothDevice::class.java }
-                    ?.apply { isAccessible = true }
-                    ?.get(inst) as? BluetoothDevice
-            }.getOrNull()
+            if (inst is BluetoothDevice) return inst
+            runCatching {
+                val m = inst.javaClass.methods.firstOrNull { it.name == "getDevice" && it.parameterCount == 0 && it.returnType == BluetoothDevice::class.java }
+                if (m != null) return m.invoke(inst) as? BluetoothDevice
+            }
+            var c: Class<*>? = inst.javaClass
+            while (c != null && c != Any::class.java) {
+                for (field in c.declaredFields) {
+                    if (field.type == BluetoothDevice::class.java) {
+                        field.isAccessible = true
+                        val dev = field.get(inst) as? BluetoothDevice
+                        if (dev != null) return dev
+                    }
+                }
+                c = c.superclass
+            }
+            return null
         }
 
         runCatching {
@@ -323,10 +392,14 @@ object ColorOsMyDevicesHook : HookContext() {
             hookBefore(method) {
                 val device = extractDevice(instance)
                 if (device != null && isSupportedDevice(device)) {
-                    val battery = latestBatteries[device.address.uppercase()]
-                    if (battery != null) {
-                        result = colorOsTwsBatteryInfo(battery)
+                    if (!isDeviceConnected(device)) return@hookBefore
+                    val battery = latestBatteries[device.address.uppercase()] ?: return@hookBefore
+                    val info = colorOsTwsBatteryInfo(battery)
+                    if (info[2] <= 0 || info[5] == COLOR_OS_CHARGE_DISCONNECTED) {
+                        info[2] = 100
+                        info[5] = COLOR_OS_CHARGE_NOT_CHARGING
                     }
+                    result = info
                 }
             }
         }.onFailure { Log.w(TAG, "OplusBluetoothDevice.getBatteryInfo hook unavailable", it) }
@@ -346,7 +419,7 @@ object ColorOsMyDevicesHook : HookContext() {
             hookBefore(method) {
                 val device = extractDevice(instance)
                 if (device != null && isSupportedDevice(device)) {
-                    result = 1581
+                    result = EXTEND_FEATURE_MASK
                 }
             }
         }.onFailure { Log.w(TAG, "OplusBluetoothDevice.getDeviceExtendFeatureMask hook unavailable", it) }
@@ -356,17 +429,42 @@ object ColorOsMyDevicesHook : HookContext() {
             hookBefore(method) {
                 val device = extractDevice(instance)
                 val featureId = args.firstOrNull() as? Int ?: return@hookBefore
-                if (device != null && featureId == 4 && isSupportedDevice(device)) {
-                    val mode = latestAncModes[device.address.uppercase()] ?: NoiseControlMode.OFF
-                    result = when (mode) {
-                        NoiseControlMode.OFF -> 1
-                        NoiseControlMode.NOISE_CANCELLATION -> 2
-                        NoiseControlMode.TRANSPARENCY -> 3
-                        else -> 1
-                    }
+                if (device != null && isSupportedDevice(device)) {
+                    getFeatureStatus(device.address, featureId)?.let { result = it }
                 }
             }
         }.onFailure { Log.w(TAG, "OplusBluetoothDevice.getExtendFeatureStatus hook unavailable", it) }
+
+        runCatching {
+            val method = cls.getDeclaredMethod(
+                "setExtendFeatureStatus",
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+            )
+            hookBefore(method) {
+                val device = extractDevice(instance)
+                val featureId = args.firstOrNull() as? Int ?: return@hookBefore
+                val value = args.getOrNull(1) as? Int ?: return@hookBefore
+                if (device != null && featureId == 4 && isSupportedDevice(device)) {
+                    val (mode, isAdaptive, subMode) = when (value) {
+                        1 -> Triple(NoiseControlMode.OFF, false, null)
+                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, 0)
+                        3 -> Triple(NoiseControlMode.TRANSPARENCY, false, null)
+                        4 -> Triple(NoiseControlMode.NOISE_CANCELLATION, true, 3)
+                        else -> Triple(NoiseControlMode.OFF, false, null)
+                    }
+                    latestAncModes[device.address.uppercase()] = mode
+                    latestAncAdaptive[device.address.uppercase()] = isAdaptive
+                    refreshQuickControls(device.address.uppercase())
+                    notifyAirpodsNoiseMode(device.address, mode, isAdaptive)
+                    val context = currentApplicationOrNull() ?: statusReceiverContext
+                    if (context != null) {
+                        dispatchAncSelect(context, device.address, mode, isAdaptive, subMode)
+                    }
+                    result = true
+                }
+            }
+        }.onFailure { Log.w(TAG, "OplusBluetoothDevice.setExtendFeatureStatus hook unavailable", it) }
     }
 
     private fun hookIconHandler() {
@@ -404,6 +502,114 @@ object ColorOsMyDevicesHook : HookContext() {
                 }
             }
         }.onFailure { Log.w(TAG, "BlueToothScannerImpl.D hook unavailable", it) }
+
+        runCatching {
+            val method = cls.getDeclaredMethod("onBatteryLevelChanged", BluetoothDevice::class.java, IntArray::class.java)
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                val iArr = args.getOrNull(1) as? IntArray ?: return@hookBefore
+                if (isSupportedDevice(dev)) {
+                    if (!isDeviceConnected(dev)) {
+                        latestBatteries.remove(dev.address.uppercase())
+                        return@hookBefore
+                    }
+                    val isAllInvalid = iArr.isEmpty() || (iArr[0] == -1 && iArr[1] == -1)
+                    if (isAllInvalid) {
+                        val battery = latestBatteries[dev.address.uppercase()]
+                        if (battery != null) {
+                            proceedWithArgs(dev, patchBatteryArray(dev, colorOsTwsBatteryInfo(battery)))
+                        } else {
+                            result = null // suppress clearing while connected and awaiting first packet
+                        }
+                        return@hookBefore
+                    }
+                    proceedWithArgs(dev, patchBatteryArray(dev, iArr))
+                }
+            }
+        }.onFailure { Log.w(TAG, "BlueToothScannerImpl.onBatteryLevelChanged hook unavailable", it) }
+
+        runCatching {
+            val obsCls = findClass("com.heytap.mydevices.core.bluetooth.AirpodsStatusObserver")
+            val method = obsCls.getDeclaredMethod("notifyBatteryLevelChanged", BluetoothDevice::class.java, IntArray::class.java).apply { isAccessible = true }
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                val iArr = args.getOrNull(1) as? IntArray ?: return@hookBefore
+                if (isSupportedDevice(dev)) {
+                    if (!isDeviceConnected(dev)) {
+                        latestBatteries.remove(dev.address.uppercase())
+                        return@hookBefore
+                    }
+                    val isAllInvalid = iArr.isEmpty() || (iArr[0] == -1 && iArr[1] == -1)
+                    if (isAllInvalid) {
+                        val battery = latestBatteries[dev.address.uppercase()]
+                        if (battery != null) {
+                            proceedWithArgs(dev, patchBatteryArray(dev, colorOsTwsBatteryInfo(battery)))
+                        } else {
+                            result = null // suppress invalid battery update while connected
+                        }
+                        return@hookBefore
+                    }
+                    proceedWithArgs(dev, patchBatteryArray(dev, iArr))
+                }
+            }
+        }.onFailure { Log.w(TAG, "AirpodsStatusObserver.notifyBatteryLevelChanged hook unavailable", it) }
+
+        runCatching {
+            val dataCls = findClass("com.oplus.mydevices.deviceui.devicecard.airpods.AirpodsData")
+            val method = dataCls.getDeclaredMethod("onBatteryLevelChanged", BluetoothDevice::class.java, IntArray::class.java)
+            hookBefore(method) {
+                val dev = args.firstOrNull() as? BluetoothDevice ?: return@hookBefore
+                val iArr = args.getOrNull(1) as? IntArray ?: return@hookBefore
+                if (isSupportedDevice(dev)) {
+                    if (!isDeviceConnected(dev)) {
+                        latestBatteries.remove(dev.address.uppercase())
+                        return@hookBefore
+                    }
+                    val isAllInvalid = iArr.isEmpty() || (iArr[0] == -1 && iArr[1] == -1)
+                    if (isAllInvalid) {
+                        val battery = latestBatteries[dev.address.uppercase()]
+                        if (battery != null) {
+                            proceedWithArgs(dev, patchBatteryArray(dev, colorOsTwsBatteryInfo(battery)))
+                        } else {
+                            result = null // suppress invalid battery update while connected
+                        }
+                        return@hookBefore
+                    }
+                    proceedWithArgs(dev, patchBatteryArray(dev, iArr))
+                }
+            }
+        }.onFailure { Log.w(TAG, "AirpodsData.onBatteryLevelChanged hook unavailable", it) }
+    }
+
+    private fun patchBatteryArray(dev: BluetoothDevice, iArr: IntArray): IntArray {
+        if (!isDeviceConnected(dev)) {
+            Log.d(TAG, "patchBatteryArray dev=${dev.address} disconnected, preserving in=${iArr.joinToString()}")
+            return iArr
+        }
+        val upper = dev.address.uppercase()
+        val battery = latestBatteries[upper] ?: return iArr
+        val prevCase = battery.case
+        val patched = iArr.clone()
+        if (patched.size >= 6) {
+            val left = battery.left
+            if (left != null && left.isConnected && left.battery > 0) {
+                patched[0] = left.battery
+                patched[3] = if (left.isCharging) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+            }
+
+            val right = battery.right
+            if (right != null && right.isConnected && right.battery > 0) {
+                patched[1] = right.battery
+                patched[4] = if (right.isCharging) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+            }
+
+            if (prevCase != null && prevCase.isConnected && prevCase.battery > 0) {
+                patched[2] = prevCase.battery
+                patched[5] = if (prevCase.isCharging) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+            }
+        }
+        Log.i(TAG, "patchBatteryArray dev=${dev.address} in=${iArr.joinToString()} out=${patched.joinToString()}")
+        return patched
     }
 
     private fun hookLiteCardWidget() {
@@ -427,6 +633,114 @@ object ColorOsMyDevicesHook : HookContext() {
                     }
                 }
             }
+        }
+    }
+
+    private fun hookAirpodsFragment() {
+        val fragCls = runCatching {
+            findClass("com.oplus.mydevices.deviceui.devicecard.airpods.AirpodsFragment")
+        }.getOrNull()
+
+        if (fragCls != null) {
+            runCatching {
+                val method = fragCls.getDeclaredMethod("showAirpodsBattery", IntArray::class.java)
+                hookBefore(method) {
+                    val iArr = args.firstOrNull() as? IntArray ?: return@hookBefore
+                    if (iArr.size >= 6) {
+                        val leftValid = iArr[0] >= 0 && iArr[3] != COLOR_OS_CHARGE_DISCONNECTED
+                        val rightValid = iArr[1] >= 0 && iArr[4] != COLOR_OS_CHARGE_DISCONNECTED
+                        if (leftValid || rightValid) {
+                            if (iArr[2] <= 0 || iArr[5] == COLOR_OS_CHARGE_DISCONNECTED) {
+                                val prevCase = latestBatteries.values.firstOrNull()?.case
+                                iArr[2] = if (prevCase != null && prevCase.isConnected && prevCase.battery > 0) prevCase.battery else 100
+                                iArr[5] = if (prevCase?.isCharging == true) 1 else 2
+                            }
+                        }
+                    }
+                }
+                hookAfter(method) {
+                    val iArr = args.firstOrNull() as? IntArray ?: return@hookAfter
+                    if (iArr.size >= 6) {
+                        val leftValid = iArr[0] >= 0 && iArr[3] != COLOR_OS_CHARGE_DISCONNECTED
+                        val rightValid = iArr[1] >= 0 && iArr[4] != COLOR_OS_CHARGE_DISCONNECTED
+                        if (!leftValid && !rightValid) return@hookAfter
+                    }
+                    runCatching {
+                        val bindingField = fragCls.getDeclaredField("mBinding").apply { isAccessible = true }
+                        val binding = bindingField.get(instance) ?: return@runCatching
+                        val boxLayoutField = binding.javaClass.getDeclaredField("C").apply { isAccessible = true }
+                        val boxLayout = boxLayoutField.get(binding) as? View
+                        boxLayout?.visibility = View.VISIBLE
+                        val boxTextField = binding.javaClass.getDeclaredField("b").apply { isAccessible = true }
+                        val boxText = boxTextField.get(binding) as? TextView
+                        val caseLevel = if (iArr.size >= 6 && iArr[2] > 0) iArr[2] else 100
+                        boxText?.text = caseLevel.toString()
+                    }
+                }
+            }.onFailure { Log.w(TAG, "AirpodsFragment.showAirpodsBattery hook unavailable", it) }
+
+            runCatching {
+                val method = fragCls.getDeclaredMethod("updateAirpodsComponentVisibility", IntArray::class.java)
+                hookBefore(method) {
+                    val iArr = args.firstOrNull() as? IntArray ?: return@hookBefore
+                    if (iArr.size >= 6) {
+                        val leftValid = iArr[0] >= 0 && iArr[3] != COLOR_OS_CHARGE_DISCONNECTED
+                        val rightValid = iArr[1] >= 0 && iArr[4] != COLOR_OS_CHARGE_DISCONNECTED
+                        if (leftValid || rightValid) {
+                            if (iArr[2] <= 0 || iArr[5] == COLOR_OS_CHARGE_DISCONNECTED) {
+                                val prevCase = latestBatteries.values.firstOrNull()?.case
+                                iArr[2] = if (prevCase != null && prevCase.isConnected && prevCase.battery > 0) prevCase.battery else 100
+                                iArr[5] = if (prevCase?.isCharging == true) 1 else 2
+                            }
+                        }
+                    }
+                }
+                hookAfter(method) {
+                    val iArr = args.firstOrNull() as? IntArray ?: return@hookAfter
+                    if (iArr.size >= 6) {
+                        val leftValid = iArr[0] >= 0 && iArr[3] != COLOR_OS_CHARGE_DISCONNECTED
+                        val rightValid = iArr[1] >= 0 && iArr[4] != COLOR_OS_CHARGE_DISCONNECTED
+                        if (!leftValid && !rightValid) return@hookAfter
+                    }
+                    runCatching {
+                        val bindingField = fragCls.getDeclaredField("mBinding").apply { isAccessible = true }
+                        val binding = bindingField.get(instance) ?: return@runCatching
+                        val boxLayoutField = binding.javaClass.getDeclaredField("C").apply { isAccessible = true }
+                        val boxLayout = boxLayoutField.get(binding) as? View
+                        boxLayout?.visibility = View.VISIBLE
+                    }
+                }
+            }.onFailure { Log.w(TAG, "AirpodsFragment.updateAirpodsComponentVisibility hook unavailable", it) }
+        }
+
+        val dataCls = runCatching {
+            findClass("com.oplus.mydevices.deviceui.devicecard.airpods.AirpodsData")
+        }.getOrNull()
+
+        if (dataCls != null) {
+            runCatching {
+                val dMethod = dataCls.declaredMethods.firstOrNull { it.name == "d" && it.parameterTypes.size == 2 }
+                if (dMethod != null) {
+                    hookBefore(dMethod) {
+                        val addr = args.firstOrNull() as? String ?: return@hookBefore
+                        if (isSupportedAddress(addr)) {
+                            val dev = bluetoothDevice(addr)
+                            if (!isDeviceConnected(dev)) return@hookBefore
+                            val battery = latestBatteries[addr.uppercase()] ?: return@hookBefore
+                            val info = colorOsTwsBatteryInfo(battery)
+                            if (info[2] <= 0 || info[5] == COLOR_OS_CHARGE_DISCONNECTED) {
+                                val prevCase = battery.case ?: latestBatteries[addr.uppercase()]?.case
+                                info[2] = if (prevCase != null && prevCase.isConnected && prevCase.battery > 0) prevCase.battery else 100
+                                info[5] = if (prevCase?.isCharging == true) 1 else 2
+                            }
+                            val bField = dataCls.getDeclaredField("b").apply { isAccessible = true }
+                            val bFlow = bField.get(instance)
+                            bFlow?.javaClass?.getMethod("setValue", Any::class.java)?.invoke(bFlow, info)
+                            result = Unit
+                        }
+                    }
+                }
+            }.onFailure { Log.w(TAG, "AirpodsData.d hook unavailable", it) }
         }
     }
 
@@ -454,6 +768,7 @@ object ColorOsMyDevicesHook : HookContext() {
         latestBatteries.clear()
         latestSummaries.clear()
         latestAncModes.clear()
+        latestAncAdaptive.clear()
         latestLowLatency.clear()
         latestWearDetection.clear()
     }
@@ -747,9 +1062,11 @@ object ColorOsMyDevicesHook : HookContext() {
                     val address = received.getStringExtra("address")?.uppercase() ?: return
                     val mode = NoiseControlMode.fromBroadcastStatus(received.getIntExtra("status", 0))
                     if (!mode.isKnownMode()) return
+                    val isAdaptive = received.getBooleanExtra("is_adaptive", false) || received.getIntExtra("submode", 0) > 0
                     latestAncModes[address] = mode
+                    latestAncAdaptive[address] = isAdaptive
                     refreshQuickControls(address)
-                    notifyAirpodsNoiseMode(address, mode)
+                    notifyAirpodsNoiseMode(address, mode, isAdaptive)
                     return
                 }
                 if (action == HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_CHANGED) {
@@ -782,22 +1099,53 @@ object ColorOsMyDevicesHook : HookContext() {
                     refreshQuickControls(address)
                     return
                 }
-                if (action == HuaweiPodsAction.ACTION_PODS_DISCONNECTED) {
-                    // 断连后不留旧状态：否则重新连上（甚至换成另一副耳机）前页面会一直显示上次的电量。
-                    val address = received.getStringExtra("address")?.uppercase()
-                    if (address != null) {
-                        latestSummaries.remove(address)
-                        latestAncModes.remove(address)
-                        latestLowLatency.remove(address)
-                        latestWearDetection.remove(address)
+                when (action) {
+                    HuaweiPodsAction.ACTION_PODS_DISCONNECTED,
+                    BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                        val address = received.getStringExtra("address")
+                            ?: (received.getParcelableExtra("device", BluetoothDevice::class.java)
+                                ?: received.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java))?.address
+                        if (address != null) {
+                            val upper = address.uppercase()
+                            latestBatteries.remove(upper)
+                            latestSummaries.remove(upper)
+                            latestAncModes.remove(upper)
+                            latestLowLatency.remove(upper)
+                            latestWearDetection.remove(upper)
+                            ColorOsPodBatteryStore.clear(upper)
+                            toggleWrites.clear()
+                            runCatching {
+                                val dev = bluetoothDevice(upper) ?: return@runCatching
+                                val obsCls = findClass("com.heytap.mydevices.core.bluetooth.AirpodsStatusObserver")
+                                val companionField = obsCls.getDeclaredField("Companion").apply { isAccessible = true }
+                                val companion = companionField.get(null)
+                                val instMethod = companion.javaClass.getMethod("getInstance")
+                                val observer = instMethod.invoke(companion)
+                                val notifyMethod = obsCls.getDeclaredMethod("notifyBatteryLevelChanged", BluetoothDevice::class.java, IntArray::class.java).apply { isAccessible = true }
+                                notifyMethod.invoke(
+                                    observer,
+                                    dev,
+                                    intArrayOf(
+                                        -1,
+                                        -1,
+                                        -1,
+                                        COLOR_OS_CHARGE_DISCONNECTED,
+                                        COLOR_OS_CHARGE_DISCONNECTED,
+                                        COLOR_OS_CHARGE_DISCONNECTED,
+                                    ),
+                                )
+                            }
+                            refreshQuickControls(upper)
+                        }
+                        return
                     }
-                    // 设备空间卡片的三段电量同源，断连时必须一起丢，否则卡上会留着上一副耳机的电量。
-                    ColorOsPodBatteryStore.clear(address)
-                    toggleWrites.clear()
-                    if (address != null) refreshQuickControls(address)
-                    return
                 }
                 if (action != HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED) return
+                val isReady = received.getBooleanExtra("is_ready", true)
+                if (!isReady) {
+                    Log.d(TAG, "Ignoring battery broadcast before isReady in MyDevices")
+                    return
+                }
                 val address = received.getStringExtra("address")?.uppercase() ?: return
                 val left = received.getIntExtra("left_battery", -1)
                 val leftConn = received.getBooleanExtra("left_connected", false)
@@ -809,10 +1157,27 @@ object ColorOsMyDevicesHook : HookContext() {
                 val caseConn = received.getBooleanExtra("case_connected", false)
                 val caseChg = received.getBooleanExtra("case_charging", false)
 
+                Log.i(TAG, "statusReceiver intent received: sender=${received.`package`} leftChg=$leftChg rightChg=$rightChg caseChg=$caseChg extras=${received.extras?.keySet()?.joinToString { "$it=${received.extras?.get(it)}" }}")
+
+                if (!leftConn && !rightConn && !caseConn) return
+                if (left < 0 && right < 0) return
+
+                val existingCase = latestBatteries[address]?.case
+                val effectiveCase = if (case in 1..100) {
+                    PodParams(battery = case, isConnected = true, isCharging = caseChg)
+                } else if (existingCase != null && existingCase.battery > 0) {
+                    existingCase.copy(isConnected = true, isCharging = caseChg)
+                } else {
+                    PodParams(battery = 100, isConnected = true, isCharging = false)
+                }
+
+                val effectiveL = if (left in 0..100) left else 100
+                val effectiveR = if (right in 0..100) right else 100
+
                 val batteryParams = BatteryParams(
-                    left = PodParams(left, leftConn, leftChg),
-                    right = PodParams(right, rightConn, rightChg),
-                    case = PodParams(case, caseConn, caseChg),
+                    left = PodParams(battery = effectiveL, isConnected = true, isCharging = leftChg),
+                    right = PodParams(battery = effectiveR, isConnected = true, isCharging = rightChg),
+                    case = effectiveCase,
                 )
                 latestBatteries[address] = batteryParams
                 notifyAirpodsBattery(address, batteryParams)
@@ -850,6 +1215,7 @@ object ColorOsMyDevicesHook : HookContext() {
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_ANC_CHANGED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_DISCONNECTED)
+                    addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_CHANGED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_CHANGED)
                 },
@@ -866,17 +1232,24 @@ object ColorOsMyDevicesHook : HookContext() {
     private fun notifyAirpodsBattery(address: String, batteryParams: BatteryParams) {
         runCatching {
             val dev = bluetoothDevice(address) ?: return@runCatching
+            val info = colorOsTwsBatteryInfo(batteryParams)
+            if (info[2] <= 0 || info[5] == COLOR_OS_CHARGE_DISCONNECTED) {
+                val prevCase = batteryParams.case ?: latestBatteries[address.uppercase()]?.case
+                info[2] = if (prevCase != null && prevCase.isConnected && prevCase.battery > 0) prevCase.battery else 100
+                info[5] = if (prevCase?.isCharging == true) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+            }
             val obsCls = findClass("com.heytap.mydevices.core.bluetooth.AirpodsStatusObserver")
             val companionField = obsCls.getDeclaredField("Companion").apply { isAccessible = true }
             val companion = companionField.get(null)
             val instMethod = companion.javaClass.getMethod("getInstance")
             val observer = instMethod.invoke(companion)
             val notifyMethod = obsCls.getDeclaredMethod("notifyBatteryLevelChanged", BluetoothDevice::class.java, IntArray::class.java).apply { isAccessible = true }
-            notifyMethod.invoke(observer, dev, colorOsTwsBatteryInfo(batteryParams))
+            Log.i(TAG, "notifyAirpodsBattery dev=$address info=${info.joinToString()}")
+            notifyMethod.invoke(observer, dev, info)
         }
     }
 
-    private fun notifyAirpodsNoiseMode(address: String, mode: NoiseControlMode) {
+    private fun notifyAirpodsNoiseMode(address: String, mode: NoiseControlMode, isAdaptive: Boolean = false) {
         runCatching {
             val dev = bluetoothDevice(address) ?: return@runCatching
             val obsCls = findClass("com.heytap.mydevices.core.bluetooth.AirpodsStatusObserver")
@@ -887,7 +1260,7 @@ object ColorOsMyDevicesHook : HookContext() {
             val notifyMethod = obsCls.getDeclaredMethod("notifyNoiseModeChanged", BluetoothDevice::class.java, Int::class.javaPrimitiveType!!).apply { isAccessible = true }
             val ancVal = when (mode) {
                 NoiseControlMode.OFF -> 1
-                NoiseControlMode.NOISE_CANCELLATION -> 2
+                NoiseControlMode.NOISE_CANCELLATION -> if (isAdaptive) 4 else 2
                 NoiseControlMode.TRANSPARENCY -> 3
                 else -> 1
             }
@@ -1053,15 +1426,16 @@ object ColorOsMyDevicesHook : HookContext() {
 
     /** 蓝牙进程要求控制指令带地址和机型路由，并按 sentFromPackage 校验发送方。 */
     private fun sendControl(context: Context, action: String, device: BluetoothDevice, route: HuaweiDeviceRoute, fill: Intent.() -> Unit) {
-        context.sendIdentitySharingBroadcast(Intent(action).apply {
-            setPackage(BLUETOOTH_PACKAGE)
+        val baseIntent = Intent(action).apply {
             putExtra("address", device.address)
             encodeHuaweiDeviceRouteForBroadcast(route)?.let {
                 putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it)
             }
             fill()
             addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-        })
+        }
+        runCatching { context.sendIdentitySharingBroadcast(Intent(baseIntent).apply { setPackage(BLUETOOTH_PACKAGE) }) }
+        runCatching { context.sendIdentitySharingBroadcast(Intent(baseIntent).apply { setPackage(BuildConfig.APPLICATION_ID) }) }
     }
 
     private fun requestAncMode(

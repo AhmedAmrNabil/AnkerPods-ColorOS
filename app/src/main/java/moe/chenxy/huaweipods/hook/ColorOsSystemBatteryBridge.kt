@@ -22,21 +22,25 @@ internal const val COLOR_OS_WEAR_IN_CASE = 2
 internal const val COLOR_OS_WEAR_UNKNOWN = 255
 
 internal fun colorOsTwsBatteryInfo(battery: BatteryParams): IntArray {
-    fun level(pod: PodParams?): Int =
-        pod?.takeIf { it.isConnected }?.battery?.coerceIn(0, 100) ?: COLOR_OS_BATTERY_UNKNOWN
+    val rawLeft = battery.left?.battery ?: 100
+    val leftLevel = if (battery.left?.isConnected == true && rawLeft in 1..100) rawLeft else 100
+    val leftCharge = if (battery.left?.isCharging == true) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
 
-    fun charge(pod: PodParams?): Int = when {
-        pod == null || !pod.isConnected -> COLOR_OS_CHARGE_DISCONNECTED
-        pod.isCharging -> COLOR_OS_CHARGE_CHARGING
-        else -> COLOR_OS_CHARGE_NOT_CHARGING
-    }
+    val rawRight = battery.right?.battery ?: 100
+    val rightLevel = if (battery.right?.isConnected == true && rawRight in 1..100) rawRight else 100
+    val rightCharge = if (battery.right?.isCharging == true) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+
+    val rawCase = battery.case?.battery ?: 100
+    val caseLevel = if (rawCase in 1..100) rawCase else 100
+    val caseCharge = if (battery.case?.isCharging == true) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+
     return intArrayOf(
-        level(battery.left),
-        level(battery.right),
-        level(battery.case),
-        charge(battery.left),
-        charge(battery.right),
-        charge(battery.case),
+        leftLevel,
+        rightLevel,
+        caseLevel,
+        leftCharge,
+        rightCharge,
+        caseCharge,
     )
 }
 
@@ -80,6 +84,7 @@ internal object ColorOsSystemBatteryBridge {
 
     private val latestBatteries = java.util.concurrent.ConcurrentHashMap<String, BatteryParams>()
     private val latestAncModes = java.util.concurrent.ConcurrentHashMap<String, moe.chenxy.huaweipods.pods.NoiseControlMode>()
+    private val latestAncAdaptive = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
     fun getLatestBattery(address: String?): BatteryParams? =
         address?.uppercase()?.let { latestBatteries[it] }
@@ -87,8 +92,14 @@ internal object ColorOsSystemBatteryBridge {
     fun getLatestAnc(address: String?): moe.chenxy.huaweipods.pods.NoiseControlMode? =
         address?.uppercase()?.let { latestAncModes[it] }
 
-    fun setLatestAnc(address: String?, mode: moe.chenxy.huaweipods.pods.NoiseControlMode) {
-        address?.uppercase()?.let { latestAncModes[it] = mode }
+    fun isLatestAncAdaptive(address: String?): Boolean =
+        address?.uppercase()?.let { latestAncAdaptive[it] == true } ?: false
+
+    fun setLatestAnc(address: String?, mode: moe.chenxy.huaweipods.pods.NoiseControlMode, isAdaptive: Boolean = false) {
+        address?.uppercase()?.let {
+            latestAncModes[it] = mode
+            latestAncAdaptive[it] = isAdaptive
+        }
     }
 
     private val enabled: Boolean by lazy {
@@ -101,9 +112,25 @@ internal object ColorOsSystemBatteryBridge {
         device: BluetoothDevice,
         battery: BatteryParams,
         inEar: Boolean? = null,
+        isReady: Boolean = true,
     ) {
         if (!enabled) return
-        latestBatteries[device.address.uppercase()] = battery
+        if (!isReady) {
+            Log.d(TAG, "ColorOsSystemBatteryBridge.publish: suppressed before isReady")
+            return
+        }
+        val addr = device.address.uppercase()
+        val existingCase = latestBatteries[addr]?.case
+        val rawCase = battery.case
+        val effectiveCase = if (rawCase != null && rawCase.battery > 0) {
+            rawCase.copy(isConnected = true)
+        } else if (existingCase != null && existingCase.battery > 0) {
+            existingCase.copy(isConnected = true)
+        } else {
+            PodParams(battery = 100, isConnected = true, isCharging = false)
+        }
+        val effectiveBattery = battery.copy(case = effectiveCase)
+        latestBatteries[addr] = effectiveBattery
         // 顺带把三段电量写进全局快照：其它进程（蓝牙设置 / 设备详细信息页）启动时先读它，
         // 不必等下一包广播才显示得出三段。
         runCatching {
@@ -111,26 +138,32 @@ internal object ColorOsSystemBatteryBridge {
                 context,
                 ColorOsPodBattery(
                     address = device.address,
-                    left = battery.left?.battery ?: 0,
-                    leftConnected = battery.left?.isConnected == true,
-                    right = battery.right?.battery ?: 0,
-                    rightConnected = battery.right?.isConnected == true,
-                    case = battery.case?.battery ?: 0,
-                    caseConnected = battery.case?.isConnected == true,
+                    left = effectiveBattery.left?.battery ?: 0,
+                    leftConnected = effectiveBattery.left?.isConnected == true,
+                    right = effectiveBattery.right?.battery ?: 0,
+                    rightConnected = effectiveBattery.right?.isConnected == true,
+                    case = effectiveBattery.case?.battery ?: 0,
+                    caseConnected = effectiveBattery.case?.isConnected == true,
                     name = device.name,
                 ),
             )
         }
-        val info = colorOsTwsBatteryInfo(battery)
+        val info = colorOsTwsBatteryInfo(effectiveBattery)
+        if (info[2] <= 0 || info[5] == COLOR_OS_CHARGE_DISCONNECTED) {
+            info[2] = effectiveCase.battery.coerceIn(1, 100)
+            info[5] = if (effectiveCase.isCharging) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+        }
         val remote = oplusRemoteDevice(context)
         if (remote != null) {
             runCatching {
-                remote.call(
-                    "setOplusDeviceProtocolTransport",
-                    arrayOf(BluetoothDevice::class.java, Int::class.javaPrimitiveType!!),
-                    device,
-                    remote.transportHfpAt,
-                )
+                if (!moe.chenxy.huaweipods.backend.soundcore.SoundcoreDeviceIdentifier.isSoundcoreDevice(device)) {
+                    remote.call(
+                        "setOplusDeviceProtocolTransport",
+                        arrayOf(BluetoothDevice::class.java, Int::class.javaPrimitiveType!!),
+                        device,
+                        remote.transportHfpAt,
+                    )
+                }
                 remote.call(
                     "notifyWearStatusChanged",
                     arrayOf(
@@ -139,8 +172,8 @@ internal object ColorOsSystemBatteryBridge {
                         Int::class.javaPrimitiveType!!,
                     ),
                     device,
-                    colorOsEarbudWearStatus(battery.left, inEar),
-                    colorOsEarbudWearStatus(battery.right, inEar),
+                    colorOsEarbudWearStatus(effectiveBattery.left, inEar),
+                    colorOsEarbudWearStatus(effectiveBattery.right, inEar),
                 )
                 remote.call(
                     "notifyBatteryLevelChanged",
@@ -153,9 +186,9 @@ internal object ColorOsSystemBatteryBridge {
             }
         }
         notifyAirPodsManager(context, device, info)
-        publishAndroidMetadata(device, battery)
+        publishAndroidMetadata(device, effectiveBattery)
         // OPLUS 在右耳缺席时会把 -1 当作最低值写入标准电量；这里再用在线耳机较低值校正。
-        val systemLevel = colorOsSystemBatteryLevel(battery)
+        val systemLevel = colorOsSystemBatteryLevel(effectiveBattery)
         if (systemLevel >= 0) setAndroidBatteryLevel(context, device, systemLevel)
         // 只在数值变化时记一条：蓝牙设置页显示几段，全靠这个数组的内容，排查时必须看得到。
         val signature = info.joinToString() + "|" + systemLevel + "|" + inEar
@@ -205,7 +238,21 @@ internal object ColorOsSystemBatteryBridge {
 
     fun clear(context: Context, device: BluetoothDevice) {
         if (!enabled) return
+        val addr = device.address.uppercase()
+        latestBatteries.remove(addr)
         ColorOsBatterySnapshot.clear(context, device.address)
+        notifyAirPodsManager(
+            context,
+            device,
+            intArrayOf(
+                COLOR_OS_BATTERY_UNKNOWN,
+                COLOR_OS_BATTERY_UNKNOWN,
+                COLOR_OS_BATTERY_UNKNOWN,
+                COLOR_OS_CHARGE_DISCONNECTED,
+                COLOR_OS_CHARGE_DISCONNECTED,
+                COLOR_OS_CHARGE_DISCONNECTED,
+            ),
+        )
         // OPLUS 电量数组是独立通道：只清标准电量时，「我的设备」/蓝牙设置仍会显示断开前的
         // 左右耳和盒电量。断开时两处一起清。
         oplusRemoteDevice(context)?.let { remote ->

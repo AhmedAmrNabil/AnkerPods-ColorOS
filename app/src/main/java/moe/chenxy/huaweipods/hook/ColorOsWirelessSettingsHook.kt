@@ -178,11 +178,25 @@ object ColorOsWirelessSettingsHook : HookContext() {
         }
     }
 
+    private fun isDeviceConnected(device: BluetoothDevice?): Boolean {
+        if (device == null) return false
+        return runCatching {
+            val method = device.javaClass.methods.firstOrNull {
+                it.name == "isConnected" && it.parameterCount in 0..1
+            } ?: return@runCatching false
+            when (method.parameterCount) {
+                0 -> method.invoke(device) as? Boolean ?: false
+                else -> method.invoke(device, BluetoothDevice.TRANSPORT_AUTO) as? Boolean ?: false
+            }
+        }.getOrElse { false }
+    }
+
     private fun hookBatteryInfoReflection() {
         val method = findMethod(BLUETOOTH_NATIVE, "getBatteryInfoByReflection", BluetoothDevice::class.java)
         hookAfter(method) {
             val device = args.firstOrNull() as? BluetoothDevice ?: return@hookAfter
             if (isSupportedDevice(device)) {
+                if (!isDeviceConnected(device)) return@hookAfter
                 val array = latestBatteryArrays[device.address.uppercase()]
                 if (array != null) {
                     result = array
@@ -192,6 +206,14 @@ object ColorOsWirelessSettingsHook : HookContext() {
     }
 
     private fun formatSummary(cachedDevice: Any, addr: String): String? {
+        val isConnected = runCatching {
+            val dev = callMethod(cachedDevice, "getDevice") as? BluetoothDevice
+                ?: getObjectField(cachedDevice, "mDevice") as? BluetoothDevice
+            val connectedMethod = cachedDevice.javaClass.methods.firstOrNull { it.name == "isConnected" }
+            (connectedMethod?.invoke(cachedDevice) as? Boolean == true) || (dev != null && isDeviceConnected(dev))
+        }.getOrDefault(false)
+        if (!isConnected) return null
+
         val summary = latestSummaries[addr]
             ?: latestBatteryArrays[addr]?.let { arr ->
                 val chinese = Locale.getDefault().language == Locale.CHINESE.language
@@ -430,9 +452,16 @@ object ColorOsWirelessSettingsHook : HookContext() {
                     Log.w(TAG, "Rejected wireless settings state action=${received.action} sender=$sentFromPackage")
                     return
                 }
-                val action = HuaweiPodsAction.canonical(received.action)
-                val address = received.getStringExtra("address")?.uppercase() ?: return
+                val action = HuaweiPodsAction.canonical(received.action) ?: received.action
+                val address = (received.getStringExtra("address")
+                    ?: (received.getParcelableExtra("device", BluetoothDevice::class.java)
+                        ?: received.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java))?.address)?.uppercase() ?: return
                 knownSupportedAddresses.add(address)
+                if (action == HuaweiPodsAction.ACTION_PODS_DISCONNECTED || action == BluetoothDevice.ACTION_ACL_DISCONNECTED) {
+                    latestBatteryArrays.remove(address)
+                    latestSummaries.remove(address)
+                    return
+                }
                 if (action == HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED) {
                     val leftBattery = received.getIntExtra("left_battery", 0)
                     val leftConnected = received.getBooleanExtra("left_connected", false)
@@ -481,6 +510,7 @@ object ColorOsWirelessSettingsHook : HookContext() {
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_CONNECTED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_DISCONNECTED)
+                    addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
                 },
                 Context.RECEIVER_EXPORTED,
             )

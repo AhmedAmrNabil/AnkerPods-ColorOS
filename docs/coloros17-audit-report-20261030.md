@@ -796,3 +796,75 @@ fun currentPod(): ColorOsPodBattery? {
 
 判掉时打一条 `skip card text="…" (not our pod)`——这条日志用来区分「钩子没跑」和
 「跑了但正确跳过了别人的卡」，后者才是期望行为。新增 5 个门禁用例，测试 711 → **716**。
+### 9.22 控制中心那一格：QS 磁贴 + Compose，根本没有电量位
+
+这一节把「控制中心蓝牙卡片」这条线彻底查死，结论是**这一格没有可改的电量**，不是我们没找到钩点。
+
+#### 9.22.1 平板上的真实形态
+
+| 状态 | 控制中心那一格显示 |
+| --- | --- |
+| 耳机断开 | `蓝牙 / 开` |
+| 耳机连上 | `HUAWEI FreeClip / 已连接` |
+
+也就是磁贴主标题 = 设备名，副标题 = 连接态。**没有任何百分比**。这和手机上的「蓝牙 2 部设备」大卡
+不是同一套 UI（那个在平板上不存在）。
+
+#### 9.22.2 三条路都试过了，全部落空
+
+1. **`Tile.setSubtitle`**（最直接的猜想）：钩上后打开控制中心，抓到的全部副标题是
+
+   ```
+   tile subtitle label="仅限联系人" subtitle="null"
+   tile subtitle label="护眼模式"   subtitle="null"
+   tile subtitle label="投屏"       subtitle="null"
+   tile subtitle label="阅读模式"   subtitle=""
+   tile subtitle label="省电模式"   subtitle="null"
+   tile subtitle label="FlClash"    subtitle="null"
+   tile subtitle label="LiveBridge" subtitle="Enabled"
+   tile subtitle label="旁路供电"   subtitle="null"
+   ```
+
+   一条 `已连接` 都没有 —— 蓝牙那一格不是走 `setSubtitle` 的普通磁贴。
+
+2. **`TextView.setText` 按连接态文案抓**：加了一条只匹配 `已连接` / `已配对` 的探针（上限 24 条），
+   控制中心反复开关、耳机反复连断，SystemUI 里**零命中**。
+
+3. **`SeedlingCardData` / `CapsuleInfo`**（mydevices 侧）：两个钩子都装上了
+   （`seedling card constructors=3`、`capsule constructors=2`），耳机连上后这两个构造函数
+   **一次都没被调用** —— 控制中心那一格不经过它们。
+
+#### 9.22.3 原因：ColorOS 17 的 QS 面板已经 Compose 化
+
+`SystemUI.apk` 里的类统计（9 dex 全量描述符）：
+
+| 检索 | 命中 |
+| --- | --- |
+| `qs` 相关且含 `compose` | **520** 个，含 `com/android/systemui/qs/panels/ui/compose/PaginatedGridLayout`、`qs/composefragment/QSFragmentComposeKt`、`infinitegrid/TileKt$Tile$…` |
+| `androidx/compose/ui/text/` | **415** 个（`AnnotatedString`、`AndroidParagraph` 等） |
+
+磁贴是 Compose 画的文本，自然不经 `TextView.setText`；`Tile` 对象只是状态载体。
+要在这一格加电量，得挂 Compose 的 `AnnotatedString` / `TextLayoutResult`，跟 ColorOS 版本强绑定，
+风险（SystemUI 崩了就没状态栏）和收益完全不成比例——**这一项目到此为止**。
+
+#### 9.22.4 我们保留了什么
+
+`ColorOsSystemUiBatteryHook` 里只留两件事，都是低风险：
+
+1. `Tile.setSubtitle`：万一某个 ColorOS 版本确实用副标题写「已连接」，就把它换成三段电量
+   （`左 100% 右 100% 盒 88%`），判身份用 `Tile.label`；
+2. `TextView.setText` 探针：只在 `LogLevel=DEBUG` 出声，用来以后定位 SystemUI 里的电量文本。
+
+为此新增 3 个纯函数与 10 个用例：`capsuleMatchesPod`（按 `CapsuleInfo.mac` 精确配对）、
+`isCapsuleBatteryCandidate`、`capsuleBatteryText`（空格分隔的紧凑三段）。
+
+### 9.23 新构建回归验证（平板，2026-11-03）
+
+换包后把之前验过的几条重跑一遍，确认没被这轮的钩子搅坏：
+
+| 面 | 实测文本 | 截图 |
+| --- | --- | --- |
+| 蓝牙设置列表行 | `使用中，电量：左 100%，右 100%，盒 85%` | `tablet-final-02-btsettings.png` |
+| 设备空间卡片（`huaweipods_multi_battery=3`） | `FreeClip 🔋 L100 R100 C85`，旁边 `一加 15 🔋 80` 未被误伤 | `tablet-final-03-devicemulti.png` |
+
+耳机图标也恢复成真实 FreeClip 图（图片注入链路正常）。验证后开关已复位成 `0`。

@@ -67,3 +67,47 @@ internal fun seedlingCardMentionsPod(values: List<String?>, pod: ColorOsPodBatte
         value.length >= MIN_POD_NAME_LENGTH && ColorOsHomeCardBattery.matches(value, podName)
     }
 }
+
+/** 连接态文案：胶囊卡在没有电量的场景下就显示这几个词。 */
+private val CAPSULE_CONNECTION_LABELS = setOf("已连接", "已配对", "使用中", "正在使用")
+
+/**
+ * 控制中心那张胶囊卡（`CapsuleInfo`）不属于我们时返回 false。
+ *
+ * 比 `SeedlingCardData` 好判：`CapsuleInfo` 自带 `mac` 字段，可以按地址精确配对，不依赖
+ * `md5(大写 MAC)` 的推断。
+ */
+internal fun capsuleMatchesPod(values: List<String?>, pod: ColorOsPodBattery?): Boolean {
+    if (pod == null) return false
+    val address = pod.address.trim().uppercase(java.util.Locale.ROOT)
+    if (address.isNotEmpty() && values.filterNotNull().any { it.trim().uppercase(java.util.Locale.ROOT) == address }) {
+        return true
+    }
+    return seedlingCardMentionsPod(values, pod)
+}
+
+/** 该不该被换成三段电量：连接态文案或已经带电量的字符串。 */
+internal fun isCapsuleBatteryCandidate(raw: String?): Boolean {
+    val text = raw?.trim().orEmpty()
+    if (text.isEmpty() || text.length > MAX_SEEDLING_TEXT_LENGTH) return false
+    if (text in CAPSULE_CONNECTION_LABELS) return true
+    return text.contains('%') || text.contains("电量")
+}
+
+/**
+ * 胶囊卡副标题用的三段写法：`左 100% 右 100% 盒 88%`。
+ *
+ * 用空格而不是全角逗号——胶囊卡比设置页窄，全角标点容易换行。不足两段返回 null（保持宿主原文）。
+ */
+internal fun capsuleBatteryText(triple: ColorOsBatteryTriple?): String? {
+    if (triple == null || triple.parts.size < 2) return null
+    return triple.parts.joinToString(" ") { part ->
+        val label = when (part.channel) {
+            ColorOsBatteryTriple.CHANNEL_LEFT -> "左"
+            ColorOsBatteryTriple.CHANNEL_RIGHT -> "右"
+            ColorOsBatteryTriple.CHANNEL_BOX -> "盒"
+            else -> ""
+        }
+        "$label ${part.value}%"
+    }
+}

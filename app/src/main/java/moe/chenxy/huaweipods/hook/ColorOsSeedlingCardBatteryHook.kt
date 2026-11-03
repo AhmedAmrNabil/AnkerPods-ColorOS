@@ -20,6 +20,7 @@ package moe.chenxy.huaweipods.hook
 internal object ColorOsSeedlingCardBatteryHook : HookContext() {
     private const val TAG = "HuaweiPods-SeedlingCard"
     private const val DATA_CLASS = "com.oplus.mydevices.domain.entities.cards.SeedlingCardData"
+    private const val CAPSULE_CLASS = "com.oplus.mydevices.domain.entities.linkage.CapsuleInfo"
     private const val MAX_PROBES = 80
 
     private val DIGITS = Regex("\\d+")
@@ -30,6 +31,42 @@ internal object ColorOsSeedlingCardBatteryHook : HookContext() {
         runCatching { hookCardData() }
             .onSuccess { Log.i(TAG, "seedling card data hook installed") }
             .onFailure { Log.w(TAG, "seedling card data hook unavailable", it) }
+        runCatching { hookCapsuleInfo() }
+            .onSuccess { Log.i(TAG, "capsule info hook installed") }
+            .onFailure { Log.w(TAG, "capsule info hook unavailable", it) }
+    }
+
+    /**
+     * 控制中心那张「HUAWEI FreeClip / 已连接」胶囊卡走的是 `CapsuleInfo`，不是 `SeedlingCardData`
+     * （真机实测：耳机连上、胶囊出现，`SeedlingCardData` 构造函数一次都没被调）。
+     *
+     * `CapsuleInfo` 自带 `mac` 字段，可以精确配对；命中后把连接态文案换成三段电量。
+     */
+    private fun hookCapsuleInfo() {
+        val constructors = findClass(CAPSULE_CLASS).declaredConstructors
+        Log.i(TAG, "capsule constructors=${constructors.size}")
+        for (constructor in constructors) {
+            constructor.isAccessible = true
+            hookConstructorBefore(constructor) {
+                runCatching {
+                    val pod = ColorOsBatterySummaryInjector.currentPod() ?: return@runCatching
+                    val triple = colorOsBatteryTriple(pod) ?: return@runCatching
+                    if (!capsuleMatchesPod(args.filterIsInstance<String>(), pod)) return@runCatching
+                    val text = capsuleBatteryText(triple) ?: return@runCatching
+                    val newArgs = args.toMutableList()
+                    var changed = false
+                    for (index in newArgs.indices) {
+                        val raw = newArgs[index] as? String ?: continue
+                        if (raw == text || !isCapsuleBatteryCandidate(raw)) continue
+                        Log.i(TAG, "capsule text=\"$raw\" -> \"$text\"")
+                        newArgs[index] = text
+                        changed = true
+                        break
+                    }
+                    if (changed) proceedWithArgs(*newArgs.toTypedArray())
+                }
+            }
+        }
     }
 
     private fun hookCardData() {

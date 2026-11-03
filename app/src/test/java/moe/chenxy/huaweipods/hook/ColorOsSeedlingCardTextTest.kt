@@ -120,4 +120,41 @@ class ColorOsSeedlingCardTextTest {
     fun `short fragments do not match by name`() {
         assertFalse(seedlingCardMentionsPod(listOf("Fre"), pod))
     }
+
+    // ---- 控制中心胶囊卡（CapsuleInfo） ----
+
+    @Test
+    fun `capsule matches by mac`() {
+        assertTrue(capsuleMatchesPod(listOf("30:A9:98:CB:C4:54", "HUAWEI FreeClip", "已连接"), pod))
+    }
+
+    @Test
+    fun `capsule matches lower case mac`() {
+        assertTrue(capsuleMatchesPod(listOf("30:a9:98:cb:c4:54"), pod))
+    }
+
+    @Test
+    fun `other capsule is rejected`() {
+        assertFalse(capsuleMatchesPod(listOf("AA:BB:CC:DD:EE:FF", "一加 15", "85%"), pod))
+    }
+
+    @Test
+    fun `capsule subtitle uses compact three part text`() {
+        assertEquals("左 100% 右 100% 盒 88%", capsuleBatteryText(full))
+        assertEquals("左 100% 右 100%", capsuleBatteryText(earbudsOnly))
+        assertNull(capsuleBatteryText(caseOnly))
+        assertNull(capsuleBatteryText(null))
+    }
+
+    @Test
+    fun `connection label and battery text are candidates`() {
+        assertTrue(isCapsuleBatteryCandidate("已连接"))
+        assertTrue(isCapsuleBatteryCandidate("使用中"))
+        assertTrue(isCapsuleBatteryCandidate("电量：100%"))
+        assertTrue(isCapsuleBatteryCandidate("85%"))
+        assertFalse(isCapsuleBatteryCandidate("HUAWEI FreeClip"))
+        assertFalse(isCapsuleBatteryCandidate("30:A9:98:CB:C4:54"))
+        assertFalse(isCapsuleBatteryCandidate(""))
+        assertFalse(isCapsuleBatteryCandidate(null))
+    }
 }

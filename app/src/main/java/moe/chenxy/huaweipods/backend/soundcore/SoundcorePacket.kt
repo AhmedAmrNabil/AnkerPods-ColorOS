@@ -218,13 +218,16 @@ object SoundcorePacket {
         // Case battery is at body offset 139 for A3947 if body is long enough
         val casePod = if (body.size > 139) {
             val caseRawLevel = body[139].toInt() and 0xFF
-            val caseConnected = caseRawLevel != 255
-            PodParams(
-                battery = levelToPercent(caseRawLevel),
-                isCharging = false,
-                isConnected = caseConnected,
-                rawStatus = caseRawLevel,
-            )
+            if (caseRawLevel != 255 && levelToPercent(caseRawLevel) > 0) {
+                PodParams(
+                    battery = levelToPercent(caseRawLevel),
+                    isCharging = false,
+                    isConnected = true,
+                    rawStatus = caseRawLevel,
+                )
+            } else {
+                currentBattery?.case
+            }
         } else {
             currentBattery?.case
         }

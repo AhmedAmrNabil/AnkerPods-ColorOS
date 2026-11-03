@@ -688,6 +688,14 @@ object MiBluetoothToastHook : HookContext() {
                                 HuaweiPodsAction.ACTION_PREVIEW_LOW_BATTERY_REMINDER -> {
                                     previewLowBatteryReminder(context)
                                 }
+                                HuaweiPodsAction.ACTION_PODS_CONNECTED -> {
+                                    val address = intent.getStringExtra("address")
+                                        ?: intent.getParcelableExtra("device", BluetoothDevice::class.java)?.address
+                                    if (address != null) {
+                                        disconnectedNotificationAddresses.remove(address)
+                                        Log.i("HuaweiPods", "Device connected, removed from disconnectedNotificationAddresses: $address")
+                                    }
+                                }
                                 HuaweiPodsAction.ACTION_UPDATE_PODS_NOTIFICATION -> {
                                     val batteryParams = intent.getParcelableExtra(
                                         "batteryParams",
@@ -696,9 +704,9 @@ object MiBluetoothToastHook : HookContext() {
                                     val device = intent.getParcelableExtra("device", BluetoothDevice::class.java)
                                         ?: return@runCatching
                                     val address = device.address
+                                    disconnectedNotificationAddresses.remove(address)
                                     if (!shouldAcceptPodsNotificationUpdate(
-                                            disconnectedSinceLastConnect =
-                                                address in disconnectedNotificationAddresses,
+                                            disconnectedSinceLastConnect = false,
                                             deviceConnected = deviceConnectionState(device),
                                         )
                                     ) {
@@ -815,6 +823,7 @@ object MiBluetoothToastHook : HookContext() {
 
                 val intentFilter = IntentFilter().apply {
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_UI_INIT)
+                    addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_CONNECTED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_CONFIG_CHANGED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_POD_IMAGES_CHANGED)
                     addHuaweiPodsAction(HuaweiPodsAction.ACTION_UPDATE_PODS_NOTIFICATION)

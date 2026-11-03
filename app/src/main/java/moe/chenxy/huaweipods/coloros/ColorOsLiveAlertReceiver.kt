@@ -223,13 +223,28 @@ class ColorOsLiveAlertReceiver : BroadcastReceiver() {
             return
         }
 
+        val isReady = intent.getBooleanExtra("is_ready", true)
+        if (!isReady) {
+            Log.d(TAG, "Suppressed ColorOS Live Alert: device state not ready")
+            return
+        }
+
         val battery = intent.batteryParams()
         intent.getStringExtra("address")?.takeIf(String::isNotBlank)?.let { address ->
             statePrefs.edit().putString(KEY_CURRENT_ADDRESS, address).apply()
         }
-        val left = battery.left?.takeIf { it.isConnected }?.battery
-        val right = battery.right?.takeIf { it.isConnected }?.battery
-        val case = battery.case?.takeIf { it.isConnected }?.battery
+        val left = battery.left?.takeIf { it.isConnected && it.battery > 0 }?.battery
+        val right = battery.right?.takeIf { it.isConnected && it.battery > 0 }?.battery
+        val rawCase = battery.case?.takeIf { it.isConnected && it.battery > 0 }?.battery
+        if (left == null && right == null) {
+            Log.d(TAG, "Suppressed ColorOS Live Alert: no valid connected earbud battery")
+            return
+        }
+        val savedCase = statePrefs.getInt("last_known_case", -1).takeIf { it > 0 }
+        val case = rawCase ?: savedCase ?: 100
+        if (rawCase != null) {
+            statePrefs.edit().putInt("last_known_case", rawCase).apply()
+        }
         if (!shouldShowColorOsLiveAlert(isColorOs, listOf(left, right, case).any { it != null })) {
             context.stopService(Intent(context, ColorOsLiveAlertService::class.java))
             manager.cancel(NOTIFICATION_ID)

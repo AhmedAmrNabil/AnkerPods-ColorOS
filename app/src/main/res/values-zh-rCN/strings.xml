@@ -5,6 +5,7 @@
     <string name="app_subtitle">ColorOS 华为耳机独立适配版</string>
     <string name="coloros_live_alert_channel">耳机流体云</string>
     <string name="coloros_live_alert_fallback_title">华为耳机</string>
+    <string name="coloros_live_alert_cycle_anc">切换降噪</string>
     <string name="coloros_live_alert_low_latency_on">开启低时延</string>
     <string name="coloros_live_alert_low_latency_off">关闭低时延</string>
     <string name="coloros_live_alert_low_latency_state_on">低时延已开启</string>

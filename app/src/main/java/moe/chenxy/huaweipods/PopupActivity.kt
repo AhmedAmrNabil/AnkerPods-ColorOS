@@ -208,6 +208,7 @@ private fun PopupContent(
 
     val batteryParams = remember { mutableStateOf(BatteryParams()) }
     val ancMode = remember { mutableStateOf(NoiseControlMode.UNKNOWN) }
+    val isAdaptiveAnc = remember { mutableStateOf(false) }
     val ancLevel = remember(target.route) {
         mutableStateOf(target.route.defaultAncSubMode ?: UNKNOWN_HUAWEI_ANC_SUBMODE)
     }
@@ -242,6 +243,7 @@ private fun PopupContent(
                             intent.getIntExtra("status", NoiseControlMode.UNKNOWN.broadcastStatus),
                         )
                         ancMode.value = reportedMode
+                        isAdaptiveAnc.value = intent.getBooleanExtra("is_adaptive", false)
                         intent.getIntExtra("submode", -1)
                             .takeIf { intent.hasExtra("submode") && it >= 0 }
                             ?.let { subMode ->
@@ -361,7 +363,7 @@ private fun PopupContent(
         }
     }
 
-    fun setAncMode(mode: NoiseControlMode) {
+    fun setAncMode(mode: NoiseControlMode, isAdaptive: Boolean = false, targetSubMode: Int? = null) {
         if (!mode.isKnown()) return
         val route = target.route
         if (!route.supportsAnc) return
@@ -371,15 +373,27 @@ private fun PopupContent(
             mode
         }
         ancMode.value = targetMode
+        isAdaptiveAnc.value = isAdaptive
         Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
             putPopupTarget(target)
             putExtra("status", targetMode.broadcastStatus)
+            putExtra("is_adaptive", isAdaptive)
             if (route.supportsDiscreteAncLevels || route.supportsSoundcoreAnc || targetMode == NoiseControlMode.TRANSPARENCY && route.supportsTransparency) {
-                val subMode = when (targetMode) {
+                val subMode = targetSubMode ?: when (targetMode) {
                     NoiseControlMode.NOISE_CANCELLATION ->
-                        ancLevel.value.takeIf {
-                            hasAncLevel.value && route.supportsAncSubMode(it)
-                        } ?: (if (route.supportsSoundcoreAnc) 3 else null)
+                        if (route.supportsSoundcoreAnc) {
+                            if (isAdaptive) {
+                                if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 0 else 3
+                            } else {
+                                ancLevel.value.takeIf {
+                                    hasAncLevel.value && route.supportsAncSubMode(it)
+                                } ?: (if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 3 else 5)
+                            }
+                        } else {
+                            ancLevel.value.takeIf {
+                                hasAncLevel.value && route.supportsAncSubMode(it)
+                            }
+                        }
                     NoiseControlMode.TRANSPARENCY -> {
                         transparencySubMode.value
                             .takeIf { it in popupTransparencySubModes(route) }
@@ -470,6 +484,7 @@ private fun PopupContent(
                 LandscapePopupBody(
                     batteryParams = batteryParams.value,
                     ancMode = ancMode.value,
+                    isAdaptive = isAdaptiveAnc.value,
                     ancLevel = if (ancMode.value == NoiseControlMode.TRANSPARENCY) {
                         transparencySubMode.value
                             .takeIf { it in popupTransparencySubModes(deviceRoute) }
@@ -478,6 +493,7 @@ private fun PopupContent(
                         ancLevel.value
                     },
                     onAncModeChange = ::setAncMode,
+                    onAncModeSelect = { mode, adaptive -> setAncMode(mode, adaptive) },
                     onAncLevelChange = ancLevelChange,
                     deviceRoute = deviceRoute,
                     showAnc = showAnc,
@@ -491,6 +507,7 @@ private fun PopupContent(
                 PortraitPopupBody(
                     batteryParams = batteryParams.value,
                     ancMode = ancMode.value,
+                    isAdaptive = isAdaptiveAnc.value,
                     ancLevel = if (ancMode.value == NoiseControlMode.TRANSPARENCY) {
                         transparencySubMode.value
                             .takeIf { it in popupTransparencySubModes(deviceRoute) }
@@ -499,6 +516,7 @@ private fun PopupContent(
                         ancLevel.value
                     },
                     onAncModeChange = ::setAncMode,
+                    onAncModeSelect = { mode, adaptive -> setAncMode(mode, adaptive) },
                     onAncLevelChange = ancLevelChange,
                     deviceRoute = deviceRoute,
                     showAnc = showAnc,
@@ -517,8 +535,10 @@ private fun PopupContent(
 private fun PortraitPopupBody(
     batteryParams: BatteryParams,
     ancMode: NoiseControlMode,
+    isAdaptive: Boolean = false,
     ancLevel: Int,
     onAncModeChange: (NoiseControlMode) -> Unit,
+    onAncModeSelect: ((NoiseControlMode, Boolean) -> Unit)? = null,
     onAncLevelChange: ((Int) -> Unit)?,
     deviceRoute: HuaweiDeviceRoute,
     showAnc: Boolean,
@@ -545,7 +565,9 @@ private fun PortraitPopupBody(
             Card(modifier = Modifier.fillMaxWidth()) {
                 AncSwitch(
                     ancStatus = ancMode,
+                    isAdaptive = isAdaptive,
                     onAncModeChange = onAncModeChange,
+                    onAncModeSelect = onAncModeSelect,
                     deviceRoute = deviceRoute,
                     huaweiAncLevel = ancLevel,
                     onHuaweiAncLevelChange = onAncLevelChange,
@@ -586,8 +608,10 @@ private fun PortraitPopupBody(
 private fun LandscapePopupBody(
     batteryParams: BatteryParams,
     ancMode: NoiseControlMode,
+    isAdaptive: Boolean = false,
     ancLevel: Int,
     onAncModeChange: (NoiseControlMode) -> Unit,
+    onAncModeSelect: ((NoiseControlMode, Boolean) -> Unit)? = null,
     onAncLevelChange: ((Int) -> Unit)?,
     deviceRoute: HuaweiDeviceRoute,
     showAnc: Boolean,
@@ -624,7 +648,9 @@ private fun LandscapePopupBody(
                 Card(modifier = Modifier.fillMaxWidth()) {
                     AncSwitch(
                         ancStatus = ancMode,
+                        isAdaptive = isAdaptive,
                         onAncModeChange = onAncModeChange,
+                        onAncModeSelect = onAncModeSelect,
                         deviceRoute = deviceRoute,
                         huaweiAncLevel = ancLevel,
                         onHuaweiAncLevelChange = onAncLevelChange,

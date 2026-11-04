@@ -46,7 +46,7 @@ object HuaweiWearDetectionController {
     private val enabledPacket = hex("5A0006002B10010101A956")
 
     fun supports(route: HuaweiDeviceRoute): Boolean =
-        route in supportedRoutes || route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        route in supportedRoutes || route.isSoundcore
 
     /** 取消旧代所有延迟回读，避免 Runnable 把旧 ClassLoader 留在主线程队列。 */
     fun closeForHotReload() {
@@ -75,7 +75,7 @@ object HuaweiWearDetectionController {
         enabled: Boolean,
         onComplete: ((Boolean) -> Unit)? = null,
     ) {
-        if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+        if (route.isSoundcore) {
             context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_SET).apply {
                 putExtra("address", device.address)
                 putExtra(BluetoothDevice.EXTRA_DEVICE, device)
@@ -131,7 +131,7 @@ object HuaweiWearDetectionController {
         route: HuaweiDeviceRoute,
         onState: (Boolean?) -> Unit,
     ) {
-        if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+        if (route.isSoundcore) {
             context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_REFRESH).apply {
                 putExtra("address", device.address)
                 putExtra(BluetoothDevice.EXTRA_DEVICE, device)

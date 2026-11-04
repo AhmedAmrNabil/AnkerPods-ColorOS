@@ -160,6 +160,7 @@ internal fun MainUI(
     val mainTitle = remember { mutableStateOf("") }
     val batteryParams = remember { mutableStateOf(BatteryParams()) }
     val ancMode = remember { mutableStateOf(NoiseControlMode.UNKNOWN) }
+    val isAdaptiveAnc = remember { mutableStateOf(false) }
     val huaweiAncLevel = remember { mutableStateOf(UNKNOWN_HUAWEI_ANC_SUBMODE) }
     val hasHuaweiAncLevel = remember { mutableStateOf(false) }
     val huaweiTransparencySubMode = remember { mutableStateOf(-1) }
@@ -462,6 +463,7 @@ internal fun MainUI(
                         val reportedMode = NoiseControlMode.fromBroadcastStatus(
                             intent.getIntExtra("status", NoiseControlMode.UNKNOWN.broadcastStatus),
                         )
+                        isAdaptiveAnc.value = intent.getBooleanExtra("is_adaptive", false)
                         ancMode.value = if (
                             reportedMode == NoiseControlMode.UNKNOWN && !route.supportsAncStateReadback
                         ) {
@@ -752,7 +754,7 @@ internal fun MainUI(
         }
     }
 
-    fun setAncMode(mode: NoiseControlMode) {
+    fun setAncMode(mode: NoiseControlMode, isAdaptive: Boolean = false, targetSubMode: Int? = null) {
         if (!mode.isKnown()) return
         val route = currentDeviceRoute()
         if (!route.supportsAnc) return
@@ -762,6 +764,7 @@ internal fun MainUI(
             mode
         }
         ancMode.value = normalizedMode
+        isAdaptiveAnc.value = isAdaptive
         Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
             putExtra("address", connectedDeviceAddress)
             putExtra("device_name", mainTitle.value)
@@ -769,12 +772,23 @@ internal fun MainUI(
                 putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it)
             }
             putExtra("status", normalizedMode.broadcastStatus)
+            putExtra("is_adaptive", isAdaptive)
             if (route.supportsDiscreteAncLevels || route.supportsSoundcoreAnc || normalizedMode == NoiseControlMode.TRANSPARENCY && route.supportsTransparency) {
-                val subMode = when (normalizedMode) {
+                val subMode = targetSubMode ?: when (normalizedMode) {
                     NoiseControlMode.NOISE_CANCELLATION ->
-                        huaweiAncLevel.value.takeIf {
-                            hasHuaweiAncLevel.value && route.supportsAncSubMode(it)
-                        } ?: (if (route.supportsSoundcoreAnc) 3 else null)
+                        if (route.supportsSoundcoreAnc) {
+                            if (isAdaptive) {
+                                if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 0 else 3
+                            } else {
+                                huaweiAncLevel.value.takeIf {
+                                    hasHuaweiAncLevel.value && route.supportsAncSubMode(it)
+                                } ?: (if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 3 else 5)
+                            }
+                        } else {
+                            huaweiAncLevel.value.takeIf {
+                                hasHuaweiAncLevel.value && route.supportsAncSubMode(it)
+                            }
+                        }
                     NoiseControlMode.TRANSPARENCY -> {
                         huaweiTransparencySubMode.value
                             .takeIf { it in supportedTransparencySubModes(route) }
@@ -1071,7 +1085,9 @@ internal fun MainUI(
                 displayTitle = displayTitle,
                 displayBattery = displayBattery,
                 displayAnc = displayAnc,
+                isAdaptiveAnc = isAdaptiveAnc.value,
                 onAncModeChange = { setAncMode(it) },
+                onAncModeSelect = { mode, adaptive -> setAncMode(mode, adaptive) },
                 huaweiAncLevel = if (displayAnc == NoiseControlMode.TRANSPARENCY) {
                     huaweiTransparencySubMode.value
                         .takeIf { it in supportedTransparencySubModes(currentDeviceRoute()) }

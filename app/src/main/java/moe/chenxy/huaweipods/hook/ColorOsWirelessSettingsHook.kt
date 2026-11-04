@@ -155,7 +155,7 @@ object ColorOsWirelessSettingsHook : HookContext() {
             val iotKMethod = findMethod("p024e3.AbstractC0431t", "k", String::class.java)
             hookAfter(iotKMethod) {
                 val name = args.firstOrNull() as? String ?: return@hookAfter
-                if (SoundcoreDeviceIdentifier.isLiberty4Nc(name) || name.contains("soundcore", ignoreCase = true)) {
+                if (SoundcoreDeviceIdentifier.isSoundcoreName(name)) {
                     result = true
                 }
             }

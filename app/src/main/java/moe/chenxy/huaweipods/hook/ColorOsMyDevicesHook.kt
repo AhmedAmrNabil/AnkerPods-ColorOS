@@ -1237,8 +1237,8 @@ object ColorOsMyDevicesHook : HookContext() {
             ?.takeIf(String::isNotBlank)
             ?: runCatching { device?.name ?: device?.alias }.getOrNull()
         var route = resolveHuaweiDeviceRoute(address, deviceName)
-        if (!route.isSupported && (SoundcoreDeviceIdentifier.isLiberty4Nc(deviceName) || deviceName?.lowercase()?.contains("soundcore") == true)) {
-            route = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        if (!route.isSupported && SoundcoreDeviceIdentifier.isSoundcoreName(deviceName)) {
+            route = SoundcoreDeviceIdentifier.resolveRoute(deviceName)
         }
         if (!route.isSupported || device == null) return
 
@@ -1269,8 +1269,8 @@ object ColorOsMyDevicesHook : HookContext() {
         val device = bluetoothDevice(address) ?: return
         val deviceName = runCatching { device.alias ?: device.name }.getOrNull()
         var route = resolveHuaweiDeviceRoute(address, deviceName)
-        if (!route.isSupported && (SoundcoreDeviceIdentifier.isLiberty4Nc(deviceName) || deviceName?.lowercase()?.contains("soundcore") == true)) {
-            route = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        if (!route.isSupported && SoundcoreDeviceIdentifier.isSoundcoreName(deviceName)) {
+            route = SoundcoreDeviceIdentifier.resolveRoute(deviceName)
         }
         if (!route.isSupported) return
 

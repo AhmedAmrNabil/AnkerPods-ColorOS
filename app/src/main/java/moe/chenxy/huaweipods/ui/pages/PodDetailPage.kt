@@ -104,7 +104,9 @@ fun PodDetailPage(
     connectedDeviceAddress: String = "",
     batteryParams: BatteryParams,
     ancMode: NoiseControlMode,
+    isAdaptiveAnc: Boolean = false,
     onAncModeChange: (NoiseControlMode) -> Unit,
+    onAncModeSelect: ((NoiseControlMode, Boolean) -> Unit)? = null,
     huaweiAncLevel: Int = 0,
     onHuaweiAncLevelChange: (Int) -> Unit = {},
     boxImagePath: String? = null,
@@ -196,7 +198,9 @@ fun PodDetailPage(
                 podControlItems(
                     batteryParams = batteryParams,
                     ancMode = ancMode,
+                    isAdaptiveAnc = isAdaptiveAnc,
                     onAncModeChange = onAncModeChange,
+                    onAncModeSelect = onAncModeSelect,
                     huaweiAncLevel = huaweiAncLevel,
                     onHuaweiAncLevelChange = ancLevelChange,
                     deviceRoute = deviceRoute,
@@ -231,7 +235,9 @@ fun PodDetailPage(
         podControlItems(
             batteryParams = batteryParams,
             ancMode = ancMode,
+            isAdaptiveAnc = isAdaptiveAnc,
             onAncModeChange = onAncModeChange,
+            onAncModeSelect = onAncModeSelect,
             huaweiAncLevel = huaweiAncLevel,
             onHuaweiAncLevelChange = ancLevelChange,
             deviceRoute = deviceRoute,
@@ -290,7 +296,9 @@ private fun decodePodDetailImage(path: String): Bitmap? = runCatching {
 private fun LazyListScope.podControlItems(
     batteryParams: BatteryParams,
     ancMode: NoiseControlMode,
+    isAdaptiveAnc: Boolean = false,
     onAncModeChange: (NoiseControlMode) -> Unit,
+    onAncModeSelect: ((NoiseControlMode, Boolean) -> Unit)? = null,
     huaweiAncLevel: Int,
     onHuaweiAncLevelChange: ((Int) -> Unit)?,
     deviceRoute: HuaweiDeviceRoute,
@@ -321,7 +329,9 @@ private fun LazyListScope.podControlItems(
                 Column {
                     AncSwitch(
                         ancStatus = ancMode,
+                        isAdaptive = isAdaptiveAnc,
                         onAncModeChange = onAncModeChange,
+                        onAncModeSelect = onAncModeSelect,
                         huaweiAncLevel = huaweiAncLevel,
                         onHuaweiAncLevelChange = onHuaweiAncLevelChange,
                         deviceRoute = deviceRoute,

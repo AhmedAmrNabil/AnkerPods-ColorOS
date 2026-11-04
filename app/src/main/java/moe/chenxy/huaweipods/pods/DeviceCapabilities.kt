@@ -20,6 +20,7 @@ enum class HuaweiDeviceRoute {
     HUAWEI_EYEWEAR,
     HUAWEI_EYEWEAR2,
     SOUNDCORE_LIBERTY_4_NC,
+    SOUNDCORE_LIBERTY_3_PRO,
     UNSUPPORTED,
 }
 
@@ -233,6 +234,18 @@ private val routeCapabilities = linkedMapOf(
         supportsWearDetection = true,
         hasChargingCase = true,
     ),
+    HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO to HuaweiDeviceCapabilities(
+        displayName = "Soundcore Liberty 3 Pro",
+        aliases = setOf("soundcoreliberty3pro", "liberty3pro", "soundcorea3952", "a3952"),
+        supportsAnc = true,
+        supportsTransparency = true,
+        supportsAncStateReadback = true,
+        supportsDiscreteAncLevels = false,
+        supportsSoundcoreAnc = true,
+        supportsLowLatencyControl = false,
+        supportsWearDetection = true,
+        hasChargingCase = true,
+    ),
 )
 
 private val normalizedAliasRoutes: Map<String, HuaweiDeviceRoute> = buildMap {
@@ -261,11 +274,15 @@ private val broadcastValueByRoute = mapOf(
     HuaweiDeviceRoute.HUAWEI_EYEWEAR to "HUAWEI_EYEWEAR",
     HuaweiDeviceRoute.HUAWEI_EYEWEAR2 to "HUAWEI_EYEWEAR2",
     HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC to "SOUNDCORE_LIBERTY_4_NC",
+    HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO to "SOUNDCORE_LIBERTY_3_PRO",
 )
 
 private val routeByBroadcastValue = broadcastValueByRoute.entries.associate { (route, value) ->
     value to route
 }
+
+val HuaweiDeviceRoute.isSoundcore: Boolean
+    get() = this == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC || this == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO
 
 val HuaweiDeviceRoute.capabilities: HuaweiDeviceCapabilities?
     get() = routeCapabilities[this]

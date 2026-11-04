@@ -43,6 +43,9 @@ object SoundcoreStateManager {
     var wearDetection: Boolean? = null
         internal set
 
+    var activeModel: SoundcoreModel = SoundcoreModel.A3947
+        internal set
+
     fun levelToPercent(level: Int, maxLevel: Int = 5): Int {
         if (level == 255 || level < 0) return 0
         if (level > maxLevel) return level.coerceIn(0, 100)
@@ -50,55 +53,97 @@ object SoundcoreStateManager {
     }
 
     /**
-     * Updates state from A3947 StateUpdate packet body (cmd [0x01, 0x01]).
+     * Updates state from StateUpdate packet body (cmd [0x01, 0x01]).
      */
-    fun updateFromStateUpdate(body: ByteArray): Boolean {
+    fun updateFromStateUpdate(body: ByteArray, model: SoundcoreModel = activeModel): Boolean {
         if (body.size < 6) return false
+
+        val effectiveModel = SoundcorePacket.detectModelFromStateUpdate(body, model)
+        activeModel = effectiveModel
 
         val rawL = body[2].toInt() and 0xFF
         val rawR = body[3].toInt() and 0xFF
         val leftChg = (body[4].toInt() and 0xFF) == 1
         val rightChg = (body[5].toInt() and 0xFF) == 1
 
-        val rawCase = if (body.size > 139) body[139].toInt() and 0xFF else 255
-        val caseChg = if (body.size > 138) (body[138].toInt() and 0xFF) == 1 else false
+        val rawCase: Int
+        val caseChg: Boolean
 
-        android.util.Log.i(
-            "SoundcoreState",
-            "updateFromStateUpdate: rawL=$rawL rawR=$rawR body4=${body[4].toInt() and 0xFF} body5=${body[5].toInt() and 0xFF} rawCase=$rawCase caseChg=$caseChg bodyLen=${body.size}"
-        )
+        when (effectiveModel) {
+            SoundcoreModel.A3952 -> {
+                rawCase = if (body.size > 130) body[130].toInt() and 0xFF else 255
+                caseChg = false
 
-        // Sound mode at offset 126 if present
-        if (body.size > 126) {
-            ancMode = when (body[126].toInt() and 0xFF) {
-                0 -> NoiseControlMode.NOISE_CANCELLATION
-                1 -> NoiseControlMode.TRANSPARENCY
-                2 -> NoiseControlMode.OFF
-                else -> NoiseControlMode.UNKNOWN
+                // Sound mode at offset 121 for A3952
+                if (body.size > 121) {
+                    ancMode = when (body[121].toInt() and 0xFF) {
+                        0 -> NoiseControlMode.NOISE_CANCELLATION
+                        1 -> NoiseControlMode.TRANSPARENCY
+                        2 -> NoiseControlMode.OFF
+                        else -> NoiseControlMode.UNKNOWN
+                    }
+                    if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 124) {
+                        val ncMode = body[124].toInt() and 0xFF
+                        if (ncMode == 0) {
+                            val manual = (body[122].toInt() and 0xF0) shr 4
+                            ancSubMode = if (manual in 1..3) manual else 3
+                            isAdaptiveAnc = false
+                        } else {
+                            val adaptive = body[122].toInt() and 0x0F
+                            ancSubMode = if (adaptive in 0..2) adaptive else 0
+                            isAdaptiveAnc = true
+                        }
+                    }
+                }
+
+                // Wearing detection at offset 128 for A3952
+                if (body.size > 128) {
+                    wearDetection = (body[128].toInt() and 0xFF) == 1
+                }
+                gamingMode = null
             }
-            if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 129) {
-                val ncMode = body[129].toInt() and 0xFF
-                if (ncMode == 0) {
-                    val manual = (body[127].toInt() and 0xF0) shr 4
-                    ancSubMode = if (manual in 1..5) manual else 5
-                    isAdaptiveAnc = false
-                } else {
-                    val adaptive = body[127].toInt() and 0x0F
-                    ancSubMode = if (adaptive in 1..5) adaptive else 3
-                    isAdaptiveAnc = true
+            SoundcoreModel.A3947 -> {
+                rawCase = if (body.size > 139) body[139].toInt() and 0xFF else 255
+                caseChg = if (body.size > 138) (body[138].toInt() and 0xFF) == 1 else false
+
+                // Sound mode at offset 126 if present
+                if (body.size > 126) {
+                    ancMode = when (body[126].toInt() and 0xFF) {
+                        0 -> NoiseControlMode.NOISE_CANCELLATION
+                        1 -> NoiseControlMode.TRANSPARENCY
+                        2 -> NoiseControlMode.OFF
+                        else -> NoiseControlMode.UNKNOWN
+                    }
+                    if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 129) {
+                        val ncMode = body[129].toInt() and 0xFF
+                        if (ncMode == 0) {
+                            val manual = (body[127].toInt() and 0xF0) shr 4
+                            ancSubMode = if (manual in 1..5) manual else 5
+                            isAdaptiveAnc = false
+                        } else {
+                            val adaptive = body[127].toInt() and 0x0F
+                            ancSubMode = if (adaptive in 1..5) adaptive else 3
+                            isAdaptiveAnc = true
+                        }
+                    }
+                }
+
+                // Gaming mode at offset 143 if present
+                if (body.size > 143) {
+                    gamingMode = (body[143].toInt() and 0xFF) == 1
+                }
+
+                // Auto play/pause (wear detection) at offset 152 if present
+                if (body.size > 152) {
+                    wearDetection = (body[152].toInt() and 0xFF) == 1
                 }
             }
         }
 
-        // Gaming mode at offset 143 if present
-        if (body.size > 143) {
-            gamingMode = (body[143].toInt() and 0xFF) == 1
-        }
-
-        // Auto play/pause (wear detection) at offset 152 if present
-        if (body.size > 152) {
-            wearDetection = (body[152].toInt() and 0xFF) == 1
-        }
+        android.util.Log.i(
+            "SoundcoreState",
+            "updateFromStateUpdate ($effectiveModel): rawL=$rawL rawR=$rawR rawCase=$rawCase caseChg=$caseChg ancMode=$ancMode wear=$wearDetection bodyLen=${body.size}"
+        )
 
         return processBatteryReading(rawL, rawR, rawCase, leftChg, rightChg, caseChg)
     }
@@ -219,5 +264,6 @@ object SoundcoreStateManager {
         isAdaptiveAnc = false
         gamingMode = null
         wearDetection = null
+        activeModel = SoundcoreModel.A3947
     }
 }

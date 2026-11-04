@@ -35,6 +35,7 @@
             }).androidsdk;
 
           jdk = pkgs.jdk21;
+          javaHome = jdk.home;
           sdk = "${androidSdk}/libexec/android-sdk";
           aapt2 = "${sdk}/build-tools/${buildToolsVersion}/aapt2";
 
@@ -61,7 +62,7 @@
                 text = ''
                   export ANDROID_HOME="${sdk}"
                   export ANDROID_SDK_ROOT="${sdk}"
-                  export JAVA_HOME="${jdk}"
+                  export JAVA_HOME="${javaHome}"
                   if [ -f keystore/signing.env ]; then
                     # shellcheck disable=SC1091
                     source keystore/signing.env
@@ -91,11 +92,11 @@
               androidSdk
               pkgs.jadx
               pkgs.git
-			  pkgs.unzip
+              pkgs.unzip
             ];
             ANDROID_HOME = sdk;
             ANDROID_SDK_ROOT = sdk;
-            JAVA_HOME = "${jdk}";
+            JAVA_HOME = javaHome;
             GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${aapt2}";
             shellHook = ''
               export PATH="$ANDROID_HOME/platform-tools:$PATH"
@@ -108,6 +109,26 @@
 
           apps = (lib.mapAttrs mkGradleApp gradleTasks) // {
             default = mkGradleApp "assembleDebug" gradleTasks.assembleDebug;
+            studio = {
+              type = "app";
+              program = lib.getExe (
+                pkgs.writeShellApplication {
+                  name = "studio";
+                  runtimeInputs = [
+                    jdk
+                    androidSdk
+                    pkgs.android-studio
+                  ];
+                  text = ''
+                    export ANDROID_HOME="${sdk}"
+                    export ANDROID_SDK_ROOT="${sdk}"
+                    export JAVA_HOME="${javaHome}"
+                    export GRADLE_OPTS="-Dorg.gradle.project.android.aapt2FromMavenOverride=${aapt2}"
+                    exec android-studio "$@"
+                  '';
+                }
+              );
+            };
           };
         };
     };

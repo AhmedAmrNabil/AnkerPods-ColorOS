@@ -33,7 +33,7 @@ import moe.chenxy.huaweipods.config.LowLatencyPrefs
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.HuaweiLowLatencyController
 import moe.chenxy.huaweipods.pods.supportsLowLatencyControl
-import top.yukonga.miuix.kmp.basic.Checkbox
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -94,10 +94,10 @@ fun LowLatencyControl(address: String, route: HuaweiDeviceRoute) {
             )
         }
         Spacer(Modifier.width(12.dp))
-        Checkbox(
-            state = if (enabled) ToggleableState.On else ToggleableState.Off,
+        Switch(
+            checked = enabled,
             enabled = !pending,
-            onClick = toggle,
+            onCheckedChange = { toggle() },
         )
     }
 }

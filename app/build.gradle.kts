@@ -90,6 +90,7 @@ configurations.configureEach {
 }
 
 dependencies {
+    implementation(libs.androidx.foundation)
     implementation(libs.coreKtx)
     // 正式版按 API 102 编译以支持热重载，并在运行时兼容 101 框架；协议采集 Debug 版固定 API 101。
     debugCompileOnly(libs.libxposedApi)

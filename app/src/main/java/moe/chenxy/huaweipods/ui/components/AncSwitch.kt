@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,8 +75,9 @@ fun AncSwitch(
     onHuaweiAncLevelChange: ((Int) -> Unit)? = null,
     isAdaptive: Boolean = false,
     onAncModeSelect: ((NoiseControlMode, Boolean, Int?) -> Unit)? = null,
+    showTitle: Boolean = true,
 ) {
-    val verticalPadding = if (compact) 8.dp else 16.dp
+    val verticalPadding = if (!showTitle) 0.dp else if (compact) 8.dp else 16.dp
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -96,6 +98,7 @@ fun AncSwitch(
                 onHuaweiAncLevelChange = onHuaweiAncLevelChange,
                 compact = compact,
                 maxManualLevel = if (deviceRoute == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 3 else 5,
+                showTitle = showTitle,
             )
         } else {
             if (deviceRoute.supportsTransparency) {
@@ -103,6 +106,7 @@ fun AncSwitch(
                     selectedMode = ancStatus,
                     onModeChange = onAncModeChange,
                     compact = compact,
+                    showTitle = showTitle,
                 )
             } else {
                 HuaweiAncSimpleHeader(
@@ -194,17 +198,20 @@ private fun HuaweiNoiseControlSelector(
     selectedMode: NoiseControlMode,
     onModeChange: (NoiseControlMode) -> Unit,
     compact: Boolean,
+    showTitle: Boolean = true,
 ) {
-    Text(
-        text = stringResource(R.string.noise_control_title),
-        fontSize = if (compact) 14.sp else 16.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = MiuixTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(
-            horizontal = if (compact) 10.dp else 14.dp,
-            vertical = if (compact) 2.dp else 4.dp,
-        ),
-    )
+    if (showTitle) {
+        Text(
+            text = stringResource(R.string.noise_control_title),
+            fontSize = if (compact) 14.sp else 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MiuixTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(
+                horizontal = if (compact) 10.dp else 14.dp,
+                vertical = if (compact) 2.dp else 4.dp,
+            ),
+        )
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -240,6 +247,7 @@ private fun SoundcoreNoiseControlSection(
     compact: Boolean,
     maxManualLevel: Int,
     modifier: Modifier = Modifier,
+    showTitle: Boolean = true,
 ) {
     var savedManualLevel by remember {
         mutableIntStateOf(huaweiAncLevel.takeIf { it in 1..maxManualLevel } ?: maxManualLevel)
@@ -261,22 +269,25 @@ private fun SoundcoreNoiseControlSection(
     val isAdaptiveSelected = ancStatus == NoiseControlMode.NOISE_CANCELLATION && isAdaptive
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.noise_control_title),
-            fontSize = if (compact) 14.sp else 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MiuixTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(
-                horizontal = if (compact) 10.dp else 14.dp,
-                vertical = if (compact) 2.dp else 4.dp,
-            ),
-        )
+        if (showTitle) {
+            Text(
+                text = stringResource(R.string.noise_control_title),
+                fontSize = if (compact) 14.sp else 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MiuixTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(
+                    horizontal = if (compact) 10.dp else 14.dp,
+                    vertical = if (compact) 2.dp else 4.dp,
+                ),
+            )
+        }
 
+        val buttonsHorizontalPadding = if (!showTitle) 0.dp else if (compact) 6.dp else 10.dp
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
-                    horizontal = if (compact) 6.dp else 10.dp,
+                    horizontal = buttonsHorizontalPadding,
                     vertical = if (compact) 8.dp else 12.dp,
                 ),
             horizontalArrangement = Arrangement.SpaceAround,
@@ -324,31 +335,34 @@ private fun SoundcoreNoiseControlSection(
 
         // Show strength slider ONLY when Noise Cancelling (Manual mode) is chosen
         if (isCancellingSelected) {
+            val sliderHorizontalPadding = if (!showTitle) 4.dp else if (compact) 12.dp else 16.dp
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(
-                        start = if (compact) 12.dp else 16.dp,
-                        end = if (compact) 12.dp else 16.dp,
-                        top = if (compact) 6.dp else 10.dp,
-                    )
+                        start = sliderHorizontalPadding,
+                        end = sliderHorizontalPadding,
+                        top = 4.dp,
+                        bottom = 8.dp,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Bottom,
                 ) {
                     Text(
                         text = stringResource(R.string.soundcore_anc_manual_level),
-                        fontSize = if (compact) 12.sp else 13.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = MiuixTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MiuixTheme.colorScheme.onBackground,
                     )
                     Text(
-                        text = stringResource(R.string.soundcore_anc_level, savedManualLevel),
-                        fontSize = if (compact) 12.sp else 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MiuixTheme.colorScheme.primary,
+                        text = "$savedManualLevel/$maxManualLevel",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
                 }
 
@@ -372,30 +386,12 @@ private fun SoundcoreNoiseControlSection(
                     },
                     valueRange = 1f..maxManualLevel.toFloat(),
                     steps = if (maxManualLevel > 2) maxManualLevel - 2 else 0,
+                    showKeyPoints = true,
+                    keyPoints = (1..maxManualLevel).map { it.toFloat() },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp),
                 )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    for (i in 1..maxManualLevel) {
-                        Text(
-                            text = i.toString(),
-                            fontSize = if (compact) 11.sp else 12.sp,
-                            fontWeight = if (savedManualLevel == i) FontWeight.Bold else FontWeight.Normal,
-                            color = if (savedManualLevel == i) {
-                                MiuixTheme.colorScheme.primary
-                            } else {
-                                MiuixTheme.colorScheme.onBackground.copy(alpha = 0.4f)
-                            },
-                        )
-                    }
-                }
             }
         }
     }
@@ -412,8 +408,14 @@ private fun AncRoundButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val primary = MiuixTheme.colorScheme.primary
-    val circleSize = if (compact) 44.dp else 52.dp
-    val iconSize = if (compact) 22.dp else 24.dp
+    val circleSize = if (compact) 44.dp else 56.dp
+    val iconSize = if (compact) 22.dp else 26.dp
+    val isDark = isSystemInDarkTheme()
+    val textColor = if (selected) {
+        if (isDark) Color.White else Color.Black
+    } else {
+        if (isDark) Color.White.copy(alpha = 0.55f) else Color.Black.copy(alpha = 0.55f)
+    }
 
     Column(
         modifier = modifier
@@ -426,7 +428,7 @@ private fun AncRoundButton(
             modifier = Modifier
                 .size(circleSize)
                 .background(
-                    color = if (selected) primary else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.08f),
+                    color = if (selected) primary else if (isDark) MiuixTheme.colorScheme.onBackground.copy(alpha = 0.08f) else Color.White,
                     shape = CircleShape,
                 ),
             contentAlignment = Alignment.Center,
@@ -441,12 +443,12 @@ private fun AncRoundButton(
         Spacer(modifier = Modifier.height(if (compact) 4.dp else 6.dp))
         Text(
             text = label,
-            fontSize = if (compact) 10.sp else 11.sp,
-            fontWeight = FontWeight.Normal,
-            color = if (selected) Color.White else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+            fontSize = if (compact) 10.sp else 11.5.sp,
+            lineHeight = if (compact) 12.sp else 13.5.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            color = textColor,
             textAlign = TextAlign.Center,
             maxLines = 2,
-            // overflow = TextOverflow.Ellipsis,
         )
     }
 }

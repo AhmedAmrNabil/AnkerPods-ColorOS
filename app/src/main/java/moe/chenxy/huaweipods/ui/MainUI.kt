@@ -329,7 +329,12 @@ internal fun MainUI(
     val showEarphoneDetail = canShowDetailPage && !showDevicePicker
     val displayBattery = batteryParams.value
     val displayAnc = ancMode.value
-    val displayTitle = mainTitle.value.takeIf { it.isNotBlank() && hookConnected.value } ?: mainTitle.value
+    val rawTitle = mainTitle.value.takeIf { it.isNotBlank() && hookConnected.value } ?: mainTitle.value
+    val displayTitle = if (rawTitle.startsWith("soundcore", ignoreCase = true)) {
+        rawTitle.replaceFirst("soundcore", "Soundcore", ignoreCase = true)
+    } else {
+        rawTitle
+    }
 
     LaunchedEffect(xposedService) {
         val service = xposedService ?: return@LaunchedEffect
@@ -1093,7 +1098,7 @@ internal fun MainUI(
                 onBluetoothStatusClick = { openBluetoothSettings() },
                 onPairedBluetoothClick = { openDevicePicker() },
                 showEarphoneDetail = showEarphoneDetail,
-                mainTitle = mainTitle.value,
+                mainTitle = displayTitle,
                 displayTitle = displayTitle,
                 displayBattery = displayBattery,
                 displayAnc = displayAnc,

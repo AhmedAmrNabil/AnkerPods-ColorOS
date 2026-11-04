@@ -37,7 +37,7 @@ import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.HuaweiWearDetectionController
 import moe.chenxy.huaweipods.pods.supportsWearDetection
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
-import top.yukonga.miuix.kmp.basic.Checkbox
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -130,10 +130,10 @@ fun WearDetectionControl(address: String, route: HuaweiDeviceRoute) {
             )
         }
         Spacer(Modifier.width(12.dp))
-        Checkbox(
-            state = if (enabled) ToggleableState.On else ToggleableState.Off,
+        Switch(
+            checked = enabled,
             enabled = !pending,
-            onClick = toggle,
+            onCheckedChange = { toggle() },
         )
     }
 }

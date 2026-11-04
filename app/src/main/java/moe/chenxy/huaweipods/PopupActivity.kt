@@ -1,6 +1,7 @@
 package moe.chenxy.huaweipods
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import moe.chenxy.huaweipods.broadcast.HuaweiPodsBroadcastTrustPolicy
 import moe.chenxy.huaweipods.utils.safeDisplayName
@@ -10,32 +11,51 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import moe.chenxy.huaweipods.pods.NoiseControlMode
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
@@ -47,6 +67,7 @@ import moe.chenxy.huaweipods.pods.encodeHuaweiDeviceRouteForBroadcast
 import moe.chenxy.huaweipods.pods.hasChargingCase
 import moe.chenxy.huaweipods.pods.isSupported
 import moe.chenxy.huaweipods.pods.isKnown
+import moe.chenxy.huaweipods.pods.isSoundcore
 import moe.chenxy.huaweipods.pods.supportsAnc
 import moe.chenxy.huaweipods.pods.supportsAncDirectionDial
 import moe.chenxy.huaweipods.pods.supportsAncStateReadback
@@ -61,16 +82,21 @@ import moe.chenxy.huaweipods.config.LowLatencyPrefs
 import moe.chenxy.huaweipods.ui.AppLocale
 import moe.chenxy.huaweipods.ui.AppTheme
 import moe.chenxy.huaweipods.ui.components.AncSwitch
+import moe.chenxy.huaweipods.ui.components.CompactBatteryRow
 import moe.chenxy.huaweipods.ui.components.PodStatus
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.addHuaweiPodsAction
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.ChevronForward
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 class PopupActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: Context) {
@@ -80,11 +106,18 @@ class PopupActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         val prefs = getSharedPreferences(ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
         val appConfig = ConfigManager.refreshFromPrefs(prefs)
         val bluetoothDevice = intent.parcelableDevice("android.bluetooth.device.extra.DEVICE")
+            ?: intent.getStringExtra("bluetoothaddress")?.let { addr ->
+                runCatching { BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(addr) }.getOrNull()
+            }
+            ?: intent.getStringExtra("device_address")?.let { addr ->
+                runCatching { BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(addr) }.getOrNull()
+            }
         DeviceRoutePrefs.syncWithRemote(prefs, HuaweiPodsApp.xposedService)
         LowLatencyPrefs.syncWithRemote(prefs, HuaweiPodsApp.xposedService)
         val popupTarget = bluetoothDevice?.let { resolvePopupDeviceTarget(it, prefs) }
@@ -104,6 +137,22 @@ class PopupActivity : ComponentActivity() {
                 1 -> ColorSchemeMode.Light
                 2 -> ColorSchemeMode.Dark
                 else -> ColorSchemeMode.System
+            }
+            val systemDark = isSystemInDarkTheme()
+            val isDarkMode = when (prefs.getInt("theme_mode", 0)) {
+                1 -> false
+                2 -> true
+                else -> systemDark
+            }
+            DisposableEffect(isDarkMode) {
+                enableEdgeToEdge(
+                    statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT) { isDarkMode },
+                    navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT) { isDarkMode },
+                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    window.isNavigationBarContrastEnforced = false
+                }
+                onDispose {}
             }
             AppTheme(colorSchemeMode = colorSchemeMode, accentMode = prefs.getInt("accent_mode", 0)) {
                 PopupContent(
@@ -481,12 +530,42 @@ private fun PopupContent(
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Scaffold(containerColor = Color.Transparent) { _ ->
-        OverlayDialog(
-            title = target.deviceName.ifEmpty { stringResource(R.string.app_name) },
+        val rawName = target.deviceName.ifEmpty { stringResource(R.string.app_name) }
+        val deviceName = if (rawName.startsWith("soundcore", ignoreCase = true)) {
+            rawName.replaceFirst("soundcore", "Soundcore", ignoreCase = true)
+        } else if (target.route.isSoundcore && !rawName.contains("soundcore", ignoreCase = true)) {
+            "Soundcore $rawName"
+        } else {
+            rawName
+        }
+        OverlayBottomSheet(
+            title = "",
             show = showDialog.value,
+            dragHandleColor = Color.Transparent,
+            startAction = {
+                Text(
+                    text = stringResource(R.string.close),
+                    color = MiuixTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            showDialog.value = false
+                            onDone()
+                        }
+                        .padding(vertical = 4.dp),
+                )
+            },
             backgroundColor = dialogBgColor,
+            outsideMargin = DpSize(0.dp, 0.dp),
+            insideMargin = DpSize(16.dp, 0.dp),
+            sheetMaxWidth = Dp.Unspecified,
             onDismissRequest = {
                 showDialog.value = false
+                onDone()
             },
             onDismissFinished = {
                 onDone()
@@ -494,6 +573,7 @@ private fun PopupContent(
         ) {
             if (isLandscape) {
                 LandscapePopupBody(
+                    deviceName = deviceName,
                     batteryParams = batteryParams.value,
                     ancMode = ancMode.value,
                     isAdaptive = isAdaptiveAnc.value,
@@ -513,10 +593,10 @@ private fun PopupContent(
                     lowLatencyEnabled = lowLatencyEnabled.value,
                     onLowLatencyChange = ::setLowLatency,
                     onMore = onMore,
-                    onDone = { showDialog.value = false },
                 )
             } else {
                 PortraitPopupBody(
+                    deviceName = deviceName,
                     batteryParams = batteryParams.value,
                     ancMode = ancMode.value,
                     isAdaptive = isAdaptiveAnc.value,
@@ -536,7 +616,6 @@ private fun PopupContent(
                     lowLatencyEnabled = lowLatencyEnabled.value,
                     onLowLatencyChange = ::setLowLatency,
                     onMore = onMore,
-                    onDone = { showDialog.value = false },
                 )
             }
         }
@@ -545,6 +624,7 @@ private fun PopupContent(
 
 @Composable
 private fun PortraitPopupBody(
+    deviceName: String,
     batteryParams: BatteryParams,
     ancMode: NoiseControlMode,
     isAdaptive: Boolean = false,
@@ -558,36 +638,43 @@ private fun PortraitPopupBody(
     lowLatencyEnabled: Boolean,
     onLowLatencyChange: (Boolean) -> Unit,
     onMore: () -> Unit,
-    onDone: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .navigationBarsPadding(),
     ) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            PodStatus(
-                batteryParams = batteryParams,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 16.dp),
-                showCase = !deviceRoute.isSupported || deviceRoute.hasChargingCase
+        Text(
+            text = deviceName,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = MiuixTheme.colorScheme.onBackground,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        CompactBatteryRow(
+            batteryParams = batteryParams,
+            showCase = !deviceRoute.isSupported || deviceRoute.hasChargingCase,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        if (showAnc) {
+            Spacer(modifier = Modifier.height(14.dp))
+            AncSwitch(
+                ancStatus = ancMode,
+                isAdaptive = isAdaptive,
+                onAncModeChange = onAncModeChange,
+                onAncModeSelect = onAncModeSelect,
+                deviceRoute = deviceRoute,
+                huaweiAncLevel = ancLevel,
+                onHuaweiAncLevelChange = onAncLevelChange,
+                showTitle = false,
             )
         }
-        if (showAnc) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                AncSwitch(
-                    ancStatus = ancMode,
-                    isAdaptive = isAdaptive,
-                    onAncModeChange = onAncModeChange,
-                    onAncModeSelect = onAncModeSelect,
-                    deviceRoute = deviceRoute,
-                    huaweiAncLevel = ancLevel,
-                    onHuaweiAncLevelChange = onAncLevelChange,
-                )
-            }
-        }
         if (showLowLatency) {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Card(modifier = Modifier.fillMaxWidth()) {
                 SwitchPreference(
                     title = stringResource(R.string.low_latency_mode),
@@ -597,27 +684,52 @@ private fun PortraitPopupBody(
                 )
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(
+        Spacer(modifier = Modifier.height(10.dp))
+        Card(
+            onClick = onMore,
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            TextButton(
-                text = stringResource(R.string.more),
-                onClick = onMore,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(
-                text = stringResource(R.string.done),
-                onClick = onDone,
-                modifier = Modifier.weight(1f)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    Text(
+                        text = stringResource(R.string.more_settings),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Start,
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.more_settings_summary),
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        textAlign = TextAlign.Start,
+                    )
+                }
+                Icon(
+                    imageVector = MiuixIcons.ChevronForward,
+                    contentDescription = stringResource(R.string.more_settings),
+                    tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
 @Composable
 private fun LandscapePopupBody(
+    deviceName: String,
     batteryParams: BatteryParams,
     ancMode: NoiseControlMode,
     isAdaptive: Boolean = false,
@@ -631,50 +743,57 @@ private fun LandscapePopupBody(
     lowLatencyEnabled: Boolean,
     onLowLatencyChange: (Boolean) -> Unit,
     onMore: () -> Unit,
-    onDone: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .widthIn(min = 560.dp)
-            .height(240.dp),
+            .height(240.dp)
+            .navigationBarsPadding(),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Column(
             modifier = Modifier
-                .weight(0.60f)
+                .weight(0.55f)
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Center
         ) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                PodStatus(
-                    batteryParams = batteryParams,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-                    compact = true,
-                    showCase = !deviceRoute.isSupported || deviceRoute.hasChargingCase
-                )
-            }
+            Text(
+                text = deviceName,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = MiuixTheme.colorScheme.onBackground,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            CompactBatteryRow(
+                batteryParams = batteryParams,
+                showCase = !deviceRoute.isSupported || deviceRoute.hasChargingCase,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
             if (showAnc) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    AncSwitch(
-                        ancStatus = ancMode,
-                        isAdaptive = isAdaptive,
-                        onAncModeChange = onAncModeChange,
-                        onAncModeSelect = onAncModeSelect,
-                        deviceRoute = deviceRoute,
-                        huaweiAncLevel = ancLevel,
-                        onHuaweiAncLevelChange = onAncLevelChange,
-                        compact = true,
-                    )
-                }
+                AncSwitch(
+                    ancStatus = ancMode,
+                    isAdaptive = isAdaptive,
+                    onAncModeChange = onAncModeChange,
+                    onAncModeSelect = onAncModeSelect,
+                    deviceRoute = deviceRoute,
+                    huaweiAncLevel = ancLevel,
+                    onHuaweiAncLevelChange = onAncLevelChange,
+                    compact = true,
+                    showTitle = false,
+                )
             }
         }
         Column(
             modifier = Modifier
-                .weight(0.40f)
-                .fillMaxHeight(),
+                .weight(0.45f)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Center
         ) {
             if (showLowLatency) {
@@ -686,19 +805,46 @@ private fun LandscapePopupBody(
                         onCheckedChange = onLowLatencyChange,
                     )
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
-            TextButton(
-                text = stringResource(R.string.more),
+            Card(
                 onClick = onMore,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            TextButton(
-                text = stringResource(R.string.done),
-                onClick = onDone,
-                modifier = Modifier.fillMaxWidth()
-            )
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.Start,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.more_settings),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MiuixTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Start,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(R.string.more_settings_summary),
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            textAlign = TextAlign.Start,
+                        )
+                    }
+                    Icon(
+                        imageVector = MiuixIcons.ChevronForward,
+                        contentDescription = stringResource(R.string.more_settings),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
         }
     }
 }

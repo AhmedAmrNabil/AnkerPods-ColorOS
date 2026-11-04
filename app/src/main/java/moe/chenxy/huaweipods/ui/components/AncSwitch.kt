@@ -73,7 +73,7 @@ fun AncSwitch(
     huaweiAncLevel: Int = 0,
     onHuaweiAncLevelChange: ((Int) -> Unit)? = null,
     isAdaptive: Boolean = false,
-    onAncModeSelect: ((NoiseControlMode, Boolean) -> Unit)? = null,
+    onAncModeSelect: ((NoiseControlMode, Boolean, Int?) -> Unit)? = null,
 ) {
     val verticalPadding = if (compact) 8.dp else 16.dp
     Column(
@@ -85,9 +85,9 @@ fun AncSwitch(
             SoundcoreNoiseControlSection(
                 ancStatus = ancStatus,
                 isAdaptive = isAdaptive,
-                onModeSelect = { mode, adaptive ->
+                onModeSelect = { mode, adaptive, subMode ->
                     if (onAncModeSelect != null) {
-                        onAncModeSelect(mode, adaptive)
+                        onAncModeSelect(mode, adaptive, subMode)
                     } else {
                         onAncModeChange(mode)
                     }
@@ -234,7 +234,7 @@ private fun HuaweiNoiseControlSelector(
 private fun SoundcoreNoiseControlSection(
     ancStatus: NoiseControlMode,
     isAdaptive: Boolean,
-    onModeSelect: (NoiseControlMode, Boolean) -> Unit,
+    onModeSelect: (NoiseControlMode, Boolean, Int?) -> Unit,
     huaweiAncLevel: Int,
     onHuaweiAncLevelChange: ((Int) -> Unit)?,
     compact: Boolean,
@@ -282,42 +282,42 @@ private fun SoundcoreNoiseControlSection(
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.Top,
         ) {
-            // 1. Off
-            AncRoundButton(
-                iconRes = R.drawable.ic_mydevices_anc_off,
-                label = stringResource(R.string.anc_mode_off),
-                selected = isOffSelected,
-                onClick = { onModeSelect(NoiseControlMode.OFF, false) },
-                compact = compact,
-                modifier = Modifier.weight(1f),
-            )
-            // 2. Noise cancelling (Manual)
+            // 1. Noise cancelling (Manual)
             AncRoundButton(
                 iconRes = R.drawable.ic_mydevices_anc_cancelling,
                 label = stringResource(R.string.anc_mode_cancelling),
                 selected = isCancellingSelected,
                 onClick = {
-                    onModeSelect(NoiseControlMode.NOISE_CANCELLATION, false)
+                    onModeSelect(NoiseControlMode.NOISE_CANCELLATION, false, savedManualLevel)
                     onHuaweiAncLevelChange?.invoke(savedManualLevel)
                 },
                 compact = compact,
                 modifier = Modifier.weight(1f),
             )
-            // 3. Transparency
-            AncRoundButton(
-                iconRes = R.drawable.ic_mydevices_anc_transparency,
-                label = stringResource(R.string.anc_mode_transparency),
-                selected = isTransparencySelected,
-                onClick = { onModeSelect(NoiseControlMode.TRANSPARENCY, false) },
-                compact = compact,
-                modifier = Modifier.weight(1f),
-            )
-            // 4. Adaptive
+            // 2. Adaptive
             AncRoundButton(
                 iconRes = R.drawable.ic_mydevices_anc_adaptive,
                 label = stringResource(R.string.anc_mode_adaptive),
                 selected = isAdaptiveSelected,
-                onClick = { onModeSelect(NoiseControlMode.NOISE_CANCELLATION, true) },
+                onClick = { onModeSelect(NoiseControlMode.NOISE_CANCELLATION, true, null) },
+                compact = compact,
+                modifier = Modifier.weight(1f),
+            )
+            // 3. Off
+            AncRoundButton(
+                iconRes = R.drawable.ic_mydevices_anc_off,
+                label = stringResource(R.string.anc_mode_off),
+                selected = isOffSelected,
+                onClick = { onModeSelect(NoiseControlMode.OFF, false, null) },
+                compact = compact,
+                modifier = Modifier.weight(1f),
+            )
+            // 4. Transparency
+            AncRoundButton(
+                iconRes = R.drawable.ic_mydevices_anc_transparency,
+                label = stringResource(R.string.anc_mode_transparency),
+                selected = isTransparencySelected,
+                onClick = { onModeSelect(NoiseControlMode.TRANSPARENCY, false, null) },
                 compact = compact,
                 modifier = Modifier.weight(1f),
             )
@@ -444,10 +444,10 @@ private fun AncRoundButton(
             text = label,
             fontSize = if (compact) 10.sp else 11.sp,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            color = if (selected) primary else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+            color = if (selected) Color.White else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.55f),
             textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            maxLines = 2,
+            // overflow = TextOverflow.Ellipsis,
         )
     }
 }

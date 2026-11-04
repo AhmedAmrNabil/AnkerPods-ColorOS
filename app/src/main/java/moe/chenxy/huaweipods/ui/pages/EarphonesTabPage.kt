@@ -24,7 +24,7 @@ internal fun EarphonesTabPage(
     displayAnc: NoiseControlMode,
     isAdaptiveAnc: Boolean = false,
     onAncModeChange: (NoiseControlMode) -> Unit,
-    onAncModeSelect: ((NoiseControlMode, Boolean) -> Unit)? = null,
+    onAncModeSelect: ((NoiseControlMode, Boolean, Int?) -> Unit)? = null,
     huaweiAncLevel: Int,
     onHuaweiAncLevelChange: (Int) -> Unit,
     boxImagePath: String?,

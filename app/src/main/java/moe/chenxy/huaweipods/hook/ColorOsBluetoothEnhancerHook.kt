@@ -335,7 +335,7 @@ object ColorOsBluetoothEnhancerHook : HookContext() {
                 if (featureId == 4 && isSupportedDevice(device)) {
                     val (mode, isAdaptive, subMode) = when (value) {
                         1 -> Triple(NoiseControlMode.OFF, false, null)
-                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, 5)
+                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, null)
                         3 -> Triple(NoiseControlMode.TRANSPARENCY, false, null)
                         4 -> Triple(NoiseControlMode.NOISE_CANCELLATION, true, 3)
                         else -> Triple(NoiseControlMode.OFF, false, null)
@@ -536,7 +536,7 @@ object ColorOsBluetoothEnhancerHook : HookContext() {
                 if (featureId == 4 && isSupportedDevice(device)) {
                     val (mode, isAdaptive, subMode) = when (value) {
                         1 -> Triple(NoiseControlMode.OFF, false, null)
-                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, 5)
+                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, null)
                         3 -> Triple(NoiseControlMode.TRANSPARENCY, false, null)
                         4 -> Triple(NoiseControlMode.NOISE_CANCELLATION, true, 3)
                         else -> Triple(NoiseControlMode.OFF, false, null)
@@ -637,7 +637,7 @@ object ColorOsBluetoothEnhancerHook : HookContext() {
                 if (device != null && featureId == 4 && isSupportedDevice(device)) {
                     val (mode, isAdaptive, subMode) = when (value) {
                         1 -> Triple(NoiseControlMode.OFF, false, null)
-                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, 5)
+                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, null)
                         3 -> Triple(NoiseControlMode.TRANSPARENCY, false, null)
                         4 -> Triple(NoiseControlMode.NOISE_CANCELLATION, true, 3)
                         else -> Triple(NoiseControlMode.OFF, false, null)

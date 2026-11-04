@@ -192,4 +192,77 @@ class SoundcorePacketTest {
         assertNull(resultTrans.ancSubMode)
         assertEquals(false, resultTrans.isAdaptive)
     }
+
+    @Test
+    fun testA3952KnownGoodStateUpdatePacket() {
+        // Known-good packet body from OpenSCQ30 a3952.rs test: test_with_packet_from_github_issue_134
+        val bodyInts = intArrayOf(
+            1, 1, 4, 4, 0, 0, 48, 52, 46, 57, 54, 48, 52, 46, 57, 54, 51, 57, 53, 50,
+            50, 48, 54, 54, 51, 49, 67, 67, 69, 69, 69, 56, 0, 0, 60, 60, 60, 60, 60,
+            60, 60, 60, 60, 60, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 2, 1,
+            120, 150, 180, 180, 120, 120, 120, 180, 0, 0, 120, 180, 180, 180, 120, 150,
+            180, 180, 0, 0, 101, 86, 138, 244, 0, 120, 150, 180, 180, 120, 120, 120,
+            180, 0, 0, 120, 180, 180, 180, 120, 150, 180, 180, 0, 0, 0, 0, 18, 0, 97,
+            0, 96, 17, 99, 17, 102, 17, 84, 17, 84, 0, 65, 0, 64, 3, 2, 48, 0, 0, 1, 1,
+            1, 1, 0, 4, 0, 0, 0, 0, 1, 0, 0, 1, 0, 58, 255, 255, 255, 255, 255, 255,
+            101, 86, 137, 249, 70, 9
+        )
+        val body = ByteArray(bodyInts.size) { bodyInts[it].toByte() }
+
+        val detectedModel = SoundcorePacket.detectModelFromStateUpdate(body)
+        assertEquals(SoundcoreModel.A3952, detectedModel)
+
+        val result = SoundcorePacket.parseStateUpdate(body, SoundcoreModel.A3952)
+        assertNotNull(result)
+        val (battery, ancMode) = result!!
+
+        // Expected values verified in OpenSCQ30 test_with_packet_from_github_issue_134:
+        // BatteryLevelLeft: 4/5 -> 80%
+        // BatteryLevelRight: 4/5 -> 80%
+        // CaseBatteryLevel: 4/5 -> 80%
+        // AmbientSoundMode: Normal -> NoiseControlMode.OFF
+        // WearingDetection: true
+        assertEquals(80, battery.left?.battery)
+        assertEquals(80, battery.right?.battery)
+        assertEquals(80, battery.case?.battery)
+        assertEquals(false, battery.left?.isCharging)
+        assertEquals(false, battery.right?.isCharging)
+        assertEquals(true, battery.left?.isConnected)
+        assertEquals(true, battery.right?.isConnected)
+        assertEquals(true, battery.case?.isConnected)
+        assertEquals(NoiseControlMode.OFF, ancMode)
+        assertEquals(true, result.wearDetection)
+        assertNull(result.gamingMode)
+    }
+
+    @Test
+    fun testA3952BuildSetSoundModesPacket() {
+        // A3952 has 6-byte body: total length 5 (header) + 2 (cmd) + 2 (len) + 6 (body) + 1 (checksum) = 16 bytes
+        val ancPacket = SoundcorePacket.buildSetSoundModesPacket(
+            mode = NoiseControlMode.NOISE_CANCELLATION,
+            subMode = 3,
+            isAdaptive = false,
+            model = SoundcoreModel.A3952
+        )
+        assertEquals(16, ancPacket.size)
+        assertEquals(0x06, ancPacket[5].toInt() and 0xFF)
+        assertEquals(0x81, ancPacket[6].toInt() and 0xFF)
+        assertEquals(0x00, ancPacket[9].toInt() and 0xFF) // Ambient: ANC
+        assertEquals(0x30, ancPacket[10].toInt() and 0xFF) // manual strong (3)
+        assertEquals(0x00, ancPacket[12].toInt() and 0xFF) // Manual mode (0)
+
+        val transPacket = SoundcorePacket.buildSetSoundModesPacket(
+            mode = NoiseControlMode.TRANSPARENCY,
+            model = SoundcoreModel.A3952
+        )
+        assertEquals(16, transPacket.size)
+        assertEquals(0x01, transPacket[9].toInt() and 0xFF) // Transparency
+
+        val normalPacket = SoundcorePacket.buildSetSoundModesPacket(
+            mode = NoiseControlMode.OFF,
+            model = SoundcoreModel.A3952
+        )
+        assertEquals(16, normalPacket.size)
+        assertEquals(0x02, normalPacket[9].toInt() and 0xFF) // Normal (OFF)
+    }
 }

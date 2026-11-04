@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit
 import moe.chenxy.huaweipods.config.DeviceRoutePrefs
 import moe.chenxy.huaweipods.config.PodImagePrefs
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
+import moe.chenxy.huaweipods.pods.isSoundcore
 import moe.chenxy.huaweipods.pods.isSupported
 import moe.chenxy.huaweipods.utils.PodImageLoader
 
@@ -890,10 +891,10 @@ private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
             context.getSystemService(BluetoothManager::class.java)?.adapter
                 ?.getRemoteDevice(address)?.name
         }.getOrNull()
-        if (moe.chenxy.huaweipods.backend.soundcore.SoundcoreDeviceIdentifier.isLiberty4Nc(rawName) ||
-            rawName?.lowercase()?.contains("soundcore") == true
-        ) {
-            return HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        if (moe.chenxy.huaweipods.backend.soundcore.SoundcoreDeviceIdentifier.isSoundcoreName(rawName)) {
+            val resolved = runCatching { DeviceRoutePrefs.resolve(prefs, address, rawName) }.getOrNull()
+            if (resolved?.isSoundcore == true) return resolved
+            return moe.chenxy.huaweipods.backend.soundcore.SoundcoreDeviceIdentifier.resolveRoute(rawName)
         }
         return runCatching { DeviceRoutePrefs.resolve(prefs, address, rawName).takeIf { it.isSupported } }
             .getOrNull()

@@ -204,6 +204,7 @@ class DeviceCapabilitiesTest {
             HuaweiDeviceRoute.HUAWEI_EYEWEAR to "HUAWEI_EYEWEAR",
             HuaweiDeviceRoute.HUAWEI_EYEWEAR2 to "HUAWEI_EYEWEAR2",
             HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC to "SOUNDCORE_LIBERTY_4_NC",
+            HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO to "SOUNDCORE_LIBERTY_3_PRO",
         )
 
         assertEquals(enabledHuaweiDeviceRoutes(), expectedValues.keys.toList())

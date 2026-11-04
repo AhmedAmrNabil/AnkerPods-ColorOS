@@ -32,6 +32,9 @@ import moe.chenxy.huaweipods.hook.ColorOsSystemBatteryBridge
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.NoiseControlMode
 import moe.chenxy.huaweipods.pods.encodeHuaweiDeviceRouteForBroadcast
+import moe.chenxy.huaweipods.pods.huaweiDeviceRoute
+import moe.chenxy.huaweipods.pods.isSoundcore
+import moe.chenxy.huaweipods.pods.supportsLowLatencyControl
 import moe.chenxy.huaweipods.utils.miuiStrongToast.MiuiStrongToastUtil
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.PodParams
@@ -46,6 +49,14 @@ object SoundcoreBackend : EarbudBackend {
 
     private val _state = MutableStateFlow(EarbudState())
     override val state: StateFlow<EarbudState> = _state.asStateFlow()
+
+    @Volatile
+    var activeRoute: HuaweiDeviceRoute = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        private set
+
+    @Volatile
+    var activeModel: SoundcoreModel = SoundcoreModel.A3947
+        private set
 
     @Volatile
     private var activeDevice: BluetoothDevice? = null
@@ -82,9 +93,9 @@ object SoundcoreBackend : EarbudBackend {
                     } else if (receivedIntent.hasExtra("level")) {
                         receivedIntent.getIntExtra("level", -1).takeIf { it >= 0 }
                     } else if (isAdaptive) {
-                        3
+                        if (activeModel == SoundcoreModel.A3952) 0 else 3
                     } else {
-                        5
+                        if (activeModel == SoundcoreModel.A3952) 3 else 5
                     }
                     if (mode != NoiseControlMode.UNKNOWN) {
                         setAncMode(mode, subMode, isAdaptive)
@@ -120,7 +131,7 @@ object SoundcoreBackend : EarbudBackend {
                 HuaweiPodsAction.ACTION_PODS_UI_INIT -> {
                     Log.i(TAG, "Received $action: refreshing status and polling earbud state")
                     activeDevice?.takeIf { _state.value.isConnected }?.let { dev ->
-                        val name = dev.name ?: dev.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947
+                        val name = dev.name ?: dev.alias ?: activeModel.displayName
                         sendConnectionState("connected")
                         sendConnectedBroadcast(dev, name)
                     }
@@ -153,8 +164,14 @@ object SoundcoreBackend : EarbudBackend {
         activeDevice = device
         moe.chenxy.huaweipods.hook.MiBluetoothToastHook.markConnected(device.address)
 
+        val resolvedRoute = device.huaweiDeviceRoute().takeIf { it.isSoundcore }
+            ?: SoundcoreDeviceIdentifier.resolveRoute(device)
+        activeRoute = resolvedRoute
+        activeModel = SoundcoreDeviceIdentifier.resolveModel(resolvedRoute, device.name ?: device.alias)
+        SoundcoreStateManager.activeModel = activeModel
+
         val deviceName = runCatching { device.name ?: device.alias }.getOrNull()
-            ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947
+            ?: activeModel.displayName
 
         _state.update {
             it.copy(
@@ -282,15 +299,21 @@ object SoundcoreBackend : EarbudBackend {
     private fun handleInboundPacket(context: Context, device: BluetoothDevice, packet: SoundcoreInboundPacket) {
         when (packet.command) {
             SoundcorePacket.CMD_STATE_UPDATE -> {
-                val success = SoundcoreStateManager.updateFromStateUpdate(packet.body)
+                val success = SoundcoreStateManager.updateFromStateUpdate(packet.body, activeModel)
                 if (success && SoundcoreStateManager.isReady) {
+                    activeModel = SoundcoreStateManager.activeModel
+                    if (activeModel == SoundcoreModel.A3952 && activeRoute != HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) {
+                        activeRoute = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO
+                    } else if (activeModel == SoundcoreModel.A3947 && activeRoute != HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+                        activeRoute = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+                    }
                     val battery = SoundcoreStateManager.toBatteryParams()
                     val ancMode = SoundcoreStateManager.ancMode
                     val ancSubMode = SoundcoreStateManager.ancSubMode
                     val isAdaptive = SoundcoreStateManager.isAdaptiveAnc
                     val gamingMode = SoundcoreStateManager.gamingMode
                     val wearDetection = SoundcoreStateManager.wearDetection
-                    Log.i(TAG, "Soundcore state update received: L=${battery.left?.battery}% R=${battery.right?.battery}% Case=${battery.case?.battery}% ANC=$ancMode Sub=$ancSubMode Adaptive=$isAdaptive Gaming=$gamingMode Wear=$wearDetection")
+                    Log.i(TAG, "Soundcore state update received ($activeModel): L=${battery.left?.battery}% R=${battery.right?.battery}% Case=${battery.case?.battery}% ANC=$ancMode Sub=$ancSubMode Adaptive=$isAdaptive Gaming=$gamingMode Wear=$wearDetection")
                     _state.update {
                         it.copy(
                             battery = battery,
@@ -304,9 +327,11 @@ object SoundcoreBackend : EarbudBackend {
                     sendAnc(ancMode, isAdaptive)
                     ancSubMode?.let { sendAncLevel(it) }
                     gamingMode?.let {
-                        sendLowLatency(it)
-                        val prefs = context.getSharedPreferences(ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
-                        LowLatencyPrefs.setDesired(prefs, null, device.address, HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC, it)
+                        if (activeRoute.supportsLowLatencyControl) {
+                            sendLowLatency(it)
+                            val prefs = context.getSharedPreferences(ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
+                            LowLatencyPrefs.setDesired(prefs, null, device.address, activeRoute, it)
+                        }
                     }
                     wearDetection?.let { sendWearDetection(it) }
                     MiuiStrongToastUtil.showPodsNotificationByMiuiBt(context, battery, device)
@@ -335,7 +360,7 @@ object SoundcoreBackend : EarbudBackend {
                 }
             }
             SoundcorePacket.CMD_SOUND_MODES_INBOUND -> {
-                val soundModes = SoundcorePacket.parseSoundModesWithSubMode(packet.body)
+                val soundModes = SoundcorePacket.parseSoundModesWithSubMode(packet.body, activeModel)
                 SoundcoreStateManager.ancMode = soundModes.ancMode
                 SoundcoreStateManager.ancSubMode = soundModes.ancSubMode
                 SoundcoreStateManager.isAdaptiveAnc = soundModes.isAdaptive
@@ -366,6 +391,8 @@ object SoundcoreBackend : EarbudBackend {
         connectionJob?.cancel()
         connectionJob = null
 
+        activeRoute = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
+        activeModel = SoundcoreModel.A3947
         SoundcoreStateManager.onDisconnect()
         ColorOsSystemBatteryBridge.clear(context, device)
         MiuiStrongToastUtil.cancelPodsNotificationByMiuiBt(context, device)
@@ -386,9 +413,13 @@ object SoundcoreBackend : EarbudBackend {
 
     override fun setAncMode(mode: NoiseControlMode, subMode: Int?, isAdaptive: Boolean) {
         val targetSubMode = subMode ?: if (mode == NoiseControlMode.NOISE_CANCELLATION) {
-            if (isAdaptive) 3 else 5
+            if (activeModel == SoundcoreModel.A3952) {
+                if (isAdaptive) 0 else 3
+            } else {
+                if (isAdaptive) 3 else 5
+            }
         } else null
-        val packetBytes = SoundcorePacket.buildSetSoundModesPacket(mode, targetSubMode, isAdaptive)
+        val packetBytes = SoundcorePacket.buildSetSoundModesPacket(mode, targetSubMode, isAdaptive, activeModel)
         sendRawPacket(packetBytes)
 
         SoundcoreStateManager.ancMode = mode
@@ -426,6 +457,10 @@ object SoundcoreBackend : EarbudBackend {
     }
 
     fun setGamingMode(enabled: Boolean) {
+        if (activeModel == SoundcoreModel.A3952 || !activeRoute.supportsLowLatencyControl) {
+            Log.i(TAG, "Gaming mode not supported on $activeRoute ($activeModel), ignoring")
+            return
+        }
         val packet = SoundcorePacket.buildSetGamingModePacket(enabled)
         val success = sendRawPacket(packet)
         SoundcoreStateManager.gamingMode = enabled
@@ -433,7 +468,7 @@ object SoundcoreBackend : EarbudBackend {
         activeDevice?.let { dev ->
             appContext?.let { ctx ->
                 val prefs = ctx.getSharedPreferences(ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
-                LowLatencyPrefs.setDesired(prefs, null, dev.address, HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC, enabled)
+                LowLatencyPrefs.setDesired(prefs, null, dev.address, activeRoute, enabled)
             }
         }
         Log.i(TAG, "Set gaming mode (low latency): enabled=$enabled success=$success")
@@ -523,7 +558,7 @@ object SoundcoreBackend : EarbudBackend {
 
     private fun sendConnectionState(state: String) {
         val currentDevice = activeDevice ?: return
-        val deviceName = currentDevice.name ?: currentDevice.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947
+        val deviceName = currentDevice.name ?: currentDevice.alias ?: activeModel.displayName
         val ctx = appContext ?: return
         sendAppBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_CONNECTION_STATE_CHANGED) {
             putExtra("address", currentDevice.address)
@@ -534,7 +569,7 @@ object SoundcoreBackend : EarbudBackend {
 
     private fun sendConnectedBroadcast(device: BluetoothDevice, deviceName: String) {
         val ctx = appContext ?: return
-        val routeStr = encodeHuaweiDeviceRouteForBroadcast(HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC)
+        val routeStr = encodeHuaweiDeviceRouteForBroadcast(activeRoute)
         sendAppBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_CONNECTED) {
             putExtra("address", device.address)
             putExtra("device_name", deviceName)
@@ -632,7 +667,7 @@ object SoundcoreBackend : EarbudBackend {
                 putExtra("vendor", "soundcore")
                 currentDevice?.let {
                     putExtra("address", it.address)
-                    putExtra("device_name", it.name ?: it.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947)
+                    putExtra("device_name", it.name ?: it.alias ?: activeModel.displayName)
                 }
                 fill()
             }
@@ -654,14 +689,14 @@ object SoundcoreBackend : EarbudBackend {
 
     private fun sendAppBroadcast(ctx: Context, action: String, fill: Intent.() -> Unit = {}) {
         val currentDevice = activeDevice
-        val routeStr = encodeHuaweiDeviceRouteForBroadcast(HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC)
+        val routeStr = encodeHuaweiDeviceRouteForBroadcast(activeRoute)
         Intent(action).apply {
             putExtra("vendor", "soundcore")
             putExtra(HuaweiPodsAction.EXTRA_EVENT_ELAPSED_REALTIME, SystemClock.elapsedRealtime())
             routeStr?.let { putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it) }
             currentDevice?.let {
                 putExtra("address", it.address)
-                putExtra("device_name", it.name ?: it.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947)
+                putExtra("device_name", it.name ?: it.alias ?: activeModel.displayName)
             }
             fill()
             setPackage(BuildConfig.APPLICATION_ID)
@@ -672,7 +707,7 @@ object SoundcoreBackend : EarbudBackend {
 
     private fun sendExternalBroadcast(ctx: Context, action: String, fill: Intent.() -> Unit = {}) {
         val currentDevice = activeDevice
-        val routeStr = encodeHuaweiDeviceRouteForBroadcast(HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC)
+        val routeStr = encodeHuaweiDeviceRouteForBroadcast(activeRoute)
         listOf("com.heytap.mydevices", "com.oplus.wirelesssettings", "com.android.bluetooth").forEach { targetPackage ->
             Intent(action).apply {
                 putExtra("vendor", "soundcore")
@@ -680,7 +715,7 @@ object SoundcoreBackend : EarbudBackend {
                 routeStr?.let { putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, it) }
                 currentDevice?.let {
                     putExtra("address", it.address)
-                    putExtra("device_name", it.name ?: it.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947)
+                    putExtra("device_name", it.name ?: it.alias ?: activeModel.displayName)
                 }
                 fill()
                 setPackage(targetPackage)

@@ -77,7 +77,7 @@ internal val HuaweiDeviceRoute.ancLevelOptions: List<HuaweiAncLevelOption>
     }
 
 internal val HuaweiDeviceRoute.defaultAncSubMode: Int?
-    get() = if (this == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+    get() = if (isSoundcore) {
         3
     } else {
         ancLevelOptions.firstOrNull { it.level == HuaweiAncLevel.ADAPTIVE }?.protocolValue
@@ -94,7 +94,7 @@ internal fun HuaweiDeviceRoute.miuiLevelForAncSubMode(value: Int): Int? =
     ancLevelOptionForProtocolValue(value)?.miuiValue
 
 internal fun HuaweiDeviceRoute.supportsAncSubMode(value: Int): Boolean =
-    if (this == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+    if (isSoundcore) {
         value in 0..5
     } else {
         ancLevelOptionForProtocolValue(value) != null

@@ -82,58 +82,80 @@ object SoundcorePacket {
     }
 
     /**
-     * Builds the SetSoundModes packet for A3947 (7-byte body).
-     *
-     * SoundModes body structure:
-     * - byte 0: ambient_sound_mode (0 = ANC, 1 = Transparency, 2 = Normal)
-     * - byte 1: (manual_nc << 4) | adaptive_nc
-     * - byte 2: transparency_mode
-     * - byte 3: noise_canceling_mode (0: Manual, 1: Adaptive, 2: Transportation)
-     * - byte 4: wind_noise
-     * - byte 5: environment_detection
-     * - byte 6: transportation_mode
+     * Builds the SetSoundModes packet for Soundcore earbuds (A3947 7-byte body or A3952 6-byte body).
      */
     fun buildSetSoundModesPacket(
         mode: NoiseControlMode,
         subMode: Int? = null,
         isAdaptive: Boolean = false,
+        model: SoundcoreModel = SoundcoreModel.A3947,
     ): ByteArray {
-        val body = when (mode) {
-            NoiseControlMode.NOISE_CANCELLATION -> {
-                if (isAdaptive) {
-                    val adaptiveLevel = if (subMode != null && subMode in 1..5) subMode else 3
-                    byteArrayOf(
-                        0x00,
-                        ((0x5 shl 4) or adaptiveLevel).toByte(),
-                        0x01,
-                        0x01, // Adaptive (nc_mode = 1)
-                        0x01,
-                        0x01,
-                        0x00
-                    )
-                } else {
-                    // Manual noise cancelling (defaults to level 5)
-                    val manualLevel = if (subMode != null && subMode in 1..5) subMode else 5
-                    byteArrayOf(
-                        0x00,
-                        ((manualLevel shl 4) or 0x00).toByte(),
-                        0x01,
-                        0x00, // Manual (nc_mode = 0)
-                        0x01,
-                        0x01,
-                        0x03
-                    )
+        val body = when (model) {
+            SoundcoreModel.A3952 -> when (mode) {
+                NoiseControlMode.NOISE_CANCELLATION -> {
+                    if (isAdaptive) {
+                        val adaptiveLevel = if (subMode != null && subMode in 0..2) subMode else 0
+                        byteArrayOf(
+                            0x00,
+                            ((0x3 shl 4) or adaptiveLevel).toByte(),
+                            0x00,
+                            0x01, // Adaptive (nc_mode = 1)
+                            0x01,
+                            0x00
+                        )
+                    } else {
+                        val manualLevel = if (subMode != null && subMode in 1..3) subMode else 3
+                        byteArrayOf(
+                            0x00,
+                            ((manualLevel shl 4) or 0x00).toByte(),
+                            0x00,
+                            0x00, // Manual (nc_mode = 0)
+                            0x01,
+                            0x00
+                        )
+                    }
                 }
+                NoiseControlMode.TRANSPARENCY -> byteArrayOf(
+                    0x01, 0x00, 0x00, 0x00, 0x01, 0x00
+                )
+                NoiseControlMode.OFF, NoiseControlMode.UNKNOWN -> byteArrayOf(
+                    0x02, 0x00, 0x00, 0x00, 0x00, 0x00
+                )
             }
-            NoiseControlMode.TRANSPARENCY -> byteArrayOf(
-                0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00
-            )
-            NoiseControlMode.OFF -> byteArrayOf(
-                0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00
-            )
-            NoiseControlMode.UNKNOWN -> byteArrayOf(
-                0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00
-            )
+            SoundcoreModel.A3947 -> when (mode) {
+                NoiseControlMode.NOISE_CANCELLATION -> {
+                    if (isAdaptive) {
+                        val adaptiveLevel = if (subMode != null && subMode in 1..5) subMode else 3
+                        byteArrayOf(
+                            0x00,
+                            ((0x5 shl 4) or adaptiveLevel).toByte(),
+                            0x01,
+                            0x01, // Adaptive (nc_mode = 1)
+                            0x01,
+                            0x01,
+                            0x00
+                        )
+                    } else {
+                        // Manual noise cancelling (defaults to level 5)
+                        val manualLevel = if (subMode != null && subMode in 1..5) subMode else 5
+                        byteArrayOf(
+                            0x00,
+                            ((manualLevel shl 4) or 0x00).toByte(),
+                            0x01,
+                            0x00, // Manual (nc_mode = 0)
+                            0x01,
+                            0x01,
+                            0x03
+                        )
+                    }
+                }
+                NoiseControlMode.TRANSPARENCY -> byteArrayOf(
+                    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00
+                )
+                NoiseControlMode.OFF, NoiseControlMode.UNKNOWN -> byteArrayOf(
+                    0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00
+                )
+            }
         }
         return buildPacket(byteArrayOf(0x06, 0x81.toByte()), body)
     }
@@ -319,6 +341,126 @@ object SoundcorePacket {
     }
 
     /**
+     * Parses the A3952 (Liberty 3 Pro) StateUpdate packet body (cmd [0x01, 0x01]).
+     */
+    fun parseA3952StateUpdate(
+        body: ByteArray,
+        currentBattery: BatteryParams? = null,
+    ): SoundcoreStateUpdate? {
+        if (body.size < 6) return null
+
+        val leftRawLevel = body[2].toInt() and 0xFF
+        val rightRawLevel = body[3].toInt() and 0xFF
+        val leftCharging = (body[4].toInt() and 0xFF) == 1
+        val rightCharging = (body[5].toInt() and 0xFF) == 1
+
+        val leftConnected = leftRawLevel != 255
+        val rightConnected = rightRawLevel != 255
+
+        val leftPod = PodParams(
+            battery = levelToPercent(leftRawLevel),
+            isCharging = leftCharging,
+            isConnected = leftConnected,
+            rawStatus = leftRawLevel,
+        )
+
+        val rightPod = PodParams(
+            battery = levelToPercent(rightRawLevel),
+            isCharging = rightCharging,
+            isConnected = rightConnected,
+            rawStatus = rightRawLevel,
+        )
+
+        // Case battery is at body offset 130 for A3952
+        val casePod = if (body.size > 130) {
+            val caseRawLevel = body[130].toInt() and 0xFF
+            if (caseRawLevel != 255 && levelToPercent(caseRawLevel) > 0) {
+                PodParams(
+                    battery = levelToPercent(caseRawLevel),
+                    isCharging = false,
+                    isConnected = true,
+                    rawStatus = caseRawLevel,
+                )
+            } else {
+                currentBattery?.case
+            }
+        } else {
+            currentBattery?.case
+        }
+
+        val battery = BatteryParams(
+            left = leftPod,
+            right = rightPod,
+            case = casePod,
+        )
+
+        // Sound mode at offset 121 for A3952
+        var ancMode = NoiseControlMode.UNKNOWN
+        var ancSubMode: Int? = null
+        var isAdaptiveAnc = false
+        if (body.size > 121) {
+            ancMode = when (body[121].toInt() and 0xFF) {
+                0 -> NoiseControlMode.NOISE_CANCELLATION
+                1 -> NoiseControlMode.TRANSPARENCY
+                2 -> NoiseControlMode.OFF
+                else -> NoiseControlMode.UNKNOWN
+            }
+            if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 124) {
+                val ncMode = body[124].toInt() and 0xFF
+                if (ncMode == 0) {
+                    val manual = (body[122].toInt() and 0xF0) shr 4
+                    ancSubMode = if (manual in 1..3) manual else 3
+                    isAdaptiveAnc = false
+                } else {
+                    val adaptive = body[122].toInt() and 0x0F
+                    ancSubMode = if (adaptive in 0..2) adaptive else 0
+                    isAdaptiveAnc = true
+                }
+            }
+        }
+
+        // Wearing detection at offset 128 for A3952
+        val wearDetection = if (body.size > 128) {
+            (body[128].toInt() and 0xFF) == 1
+        } else null
+
+        return SoundcoreStateUpdate(
+            battery = battery,
+            ancMode = ancMode,
+            ancSubMode = ancSubMode,
+            isAdaptiveAnc = isAdaptiveAnc,
+            gamingMode = null,
+            wearDetection = wearDetection,
+        )
+    }
+
+    /**
+     * Auto-detects model from serial number prefix in body (bytes 16..19) or falls back to provided model.
+     */
+    fun detectModelFromStateUpdate(body: ByteArray, fallback: SoundcoreModel = SoundcoreModel.A3947): SoundcoreModel {
+        if (body.size >= 20) {
+            val sn = runCatching { String(body, 16, 4, Charsets.US_ASCII) }.getOrNull()
+            if (sn != null) {
+                if (sn.startsWith("3952")) return SoundcoreModel.A3952
+                if (sn.startsWith("3947")) return SoundcoreModel.A3947
+            }
+        }
+        return fallback
+    }
+
+    fun parseStateUpdate(
+        body: ByteArray,
+        model: SoundcoreModel = SoundcoreModel.A3947,
+        currentBattery: BatteryParams? = null,
+    ): SoundcoreStateUpdate? {
+        val effectiveModel = detectModelFromStateUpdate(body, model)
+        return when (effectiveModel) {
+            SoundcoreModel.A3952 -> parseA3952StateUpdate(body, currentBattery)
+            SoundcoreModel.A3947 -> parseA3947StateUpdate(body, currentBattery)
+        }
+    }
+
+    /**
      * Parses DualBatteryLevel update packet body (cmd [0x01, 0x03]).
      */
     fun parseDualBatteryLevel(
@@ -371,10 +513,13 @@ object SoundcorePacket {
     /**
      * Parses SoundModes update packet body (cmd [0x06, 0x01]).
      */
-    fun parseSoundModes(body: ByteArray): NoiseControlMode =
-        parseSoundModesWithSubMode(body).ancMode
+    fun parseSoundModes(body: ByteArray, model: SoundcoreModel = SoundcoreModel.A3947): NoiseControlMode =
+        parseSoundModesWithSubMode(body, model).ancMode
 
-    fun parseSoundModesWithSubMode(body: ByteArray): SoundcoreSoundModes {
+    fun parseSoundModesWithSubMode(
+        body: ByteArray,
+        model: SoundcoreModel = SoundcoreModel.A3947,
+    ): SoundcoreSoundModes {
         if (body.isEmpty()) return SoundcoreSoundModes(NoiseControlMode.UNKNOWN, null, false)
         val mode = when (body[0].toInt() and 0xFF) {
             0 -> NoiseControlMode.NOISE_CANCELLATION
@@ -388,11 +533,19 @@ object SoundcorePacket {
             if (ncMode == 0) {
                 val manual = (body[1].toInt() and 0xF0) shr 4
                 isAdaptive = false
-                if (manual in 1..5) manual else 5
+                if (model == SoundcoreModel.A3952) {
+                    if (manual in 1..3) manual else 3
+                } else {
+                    if (manual in 1..5) manual else 5
+                }
             } else {
                 val adaptive = body[1].toInt() and 0x0F
                 isAdaptive = true
-                if (adaptive in 1..5) adaptive else 3
+                if (model == SoundcoreModel.A3952) {
+                    if (adaptive in 0..2) adaptive else 0
+                } else {
+                    if (adaptive in 1..5) adaptive else 3
+                }
             }
         } else null
         return SoundcoreSoundModes(mode, subMode, isAdaptive)

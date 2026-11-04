@@ -10,10 +10,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,9 +32,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.chenxy.huaweipods.R
@@ -44,6 +50,7 @@ import moe.chenxy.huaweipods.pods.supportsDiscreteAncLevels
 import moe.chenxy.huaweipods.pods.supportsSoundcoreAnc
 import moe.chenxy.huaweipods.pods.supportsTransparency
 import moe.chenxy.huaweipods.pods.defaultTransparencySubMode
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -65,6 +72,8 @@ fun AncSwitch(
     compact: Boolean = false,
     huaweiAncLevel: Int = 0,
     onHuaweiAncLevelChange: ((Int) -> Unit)? = null,
+    isAdaptive: Boolean = false,
+    onAncModeSelect: ((NoiseControlMode, Boolean) -> Unit)? = null,
 ) {
     val verticalPadding = if (compact) 8.dp else 16.dp
     Column(
@@ -72,44 +81,50 @@ fun AncSwitch(
             .fillMaxWidth()
             .padding(vertical = verticalPadding)
     ) {
-        if (deviceRoute.supportsTransparency) {
-            HuaweiNoiseControlSelector(
-                selectedMode = ancStatus,
-                onModeChange = onAncModeChange,
+        if (deviceRoute.supportsSoundcoreAnc) {
+            SoundcoreNoiseControlSection(
+                ancStatus = ancStatus,
+                isAdaptive = isAdaptive,
+                onModeSelect = { mode, adaptive ->
+                    if (onAncModeSelect != null) {
+                        onAncModeSelect(mode, adaptive)
+                    } else {
+                        onAncModeChange(mode)
+                    }
+                },
+                huaweiAncLevel = huaweiAncLevel,
+                onHuaweiAncLevelChange = onHuaweiAncLevelChange,
                 compact = compact,
+                maxManualLevel = if (deviceRoute == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 3 else 5,
             )
         } else {
-            HuaweiAncSimpleHeader(
-                enabled = ancStatus.isNoiseCancellation(),
-                onToggle = {
-                    onAncModeChange(
-                        if (ancStatus.isNoiseCancellation()) {
-                            NoiseControlMode.OFF
-                        } else {
-                            NoiseControlMode.NOISE_CANCELLATION
-                        },
-                    )
-                },
-                compact = compact,
-            )
-        }
+            if (deviceRoute.supportsTransparency) {
+                HuaweiNoiseControlSelector(
+                    selectedMode = ancStatus,
+                    onModeChange = onAncModeChange,
+                    compact = compact,
+                )
+            } else {
+                HuaweiAncSimpleHeader(
+                    enabled = ancStatus.isNoiseCancellation(),
+                    onToggle = {
+                        onAncModeChange(
+                            if (ancStatus.isNoiseCancellation()) {
+                                NoiseControlMode.OFF
+                            } else {
+                                NoiseControlMode.NOISE_CANCELLATION
+                            },
+                        )
+                    },
+                    compact = compact,
+                )
+            }
 
-        if (
-            ancStatus.isNoiseCancellation() &&
-            onHuaweiAncLevelChange != null &&
-            deviceRoute.supportsSoundcoreAnc
-        ) {
-            SoundcoreAncSelector(
-                subMode = huaweiAncLevel,
-                onSubModeChange = onHuaweiAncLevelChange,
-                compact = compact,
-                modifier = Modifier.padding(top = if (compact) 8.dp else 14.dp),
-            )
-        } else if (
-            ancStatus.isNoiseCancellation() &&
-            onHuaweiAncLevelChange != null &&
-            deviceRoute.supportsDiscreteAncLevels
-        ) {
+            if (
+                ancStatus.isNoiseCancellation() &&
+                onHuaweiAncLevelChange != null &&
+                deviceRoute.supportsDiscreteAncLevels
+            ) {
             HuaweiAncSubModeSelector(
                 title = stringResource(R.string.anc_level_title),
                 values = deviceRoute.ancLevelOptions.map { option ->
@@ -172,6 +187,7 @@ fun AncSwitch(
         }
     }
 }
+}
 
 @Composable
 private fun HuaweiNoiseControlSelector(
@@ -215,65 +231,107 @@ private fun HuaweiNoiseControlSelector(
 }
 
 @Composable
-private fun SoundcoreAncSelector(
-    subMode: Int,
-    onSubModeChange: (Int) -> Unit,
-    compact: Boolean = false,
+private fun SoundcoreNoiseControlSection(
+    ancStatus: NoiseControlMode,
+    isAdaptive: Boolean,
+    onModeSelect: (NoiseControlMode, Boolean) -> Unit,
+    huaweiAncLevel: Int,
+    onHuaweiAncLevelChange: ((Int) -> Unit)?,
+    compact: Boolean,
+    maxManualLevel: Int,
     modifier: Modifier = Modifier,
 ) {
-    val isAdaptive = subMode in 1..5
-    var savedAdaptiveLevel by remember { mutableIntStateOf(if (isAdaptive) subMode else 3) }
-    var sliderFloat by remember { mutableFloatStateOf((if (isAdaptive) subMode else 3).toFloat()) }
+    var savedManualLevel by remember {
+        mutableIntStateOf(huaweiAncLevel.takeIf { it in 1..maxManualLevel } ?: maxManualLevel)
+    }
+    var sliderFloat by remember {
+        mutableFloatStateOf((huaweiAncLevel.takeIf { it in 1..maxManualLevel } ?: maxManualLevel).toFloat())
+    }
 
-    LaunchedEffect(subMode) {
-        if (subMode in 1..5) {
-            savedAdaptiveLevel = subMode
-            sliderFloat = subMode.toFloat()
+    LaunchedEffect(huaweiAncLevel) {
+        if (huaweiAncLevel in 1..maxManualLevel) {
+            savedManualLevel = huaweiAncLevel
+            sliderFloat = huaweiAncLevel.toFloat()
         }
     }
 
+    val isOffSelected = ancStatus == NoiseControlMode.OFF
+    val isCancellingSelected = ancStatus == NoiseControlMode.NOISE_CANCELLATION && !isAdaptive
+    val isTransparencySelected = ancStatus == NoiseControlMode.TRANSPARENCY
+    val isAdaptiveSelected = ancStatus == NoiseControlMode.NOISE_CANCELLATION && isAdaptive
+
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
-            text = stringResource(R.string.anc_level_title),
-            fontSize = if (compact) 13.sp else 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = MiuixTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-            modifier = Modifier.padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 4.dp),
+            text = stringResource(R.string.noise_control_title),
+            fontSize = if (compact) 14.sp else 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MiuixTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(
+                horizontal = if (compact) 10.dp else 14.dp,
+                vertical = if (compact) 2.dp else 4.dp,
+            ),
         )
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp),
+                .padding(
+                    horizontal = if (compact) 6.dp else 10.dp,
+                    vertical = if (compact) 8.dp else 12.dp,
+                ),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.Top,
         ) {
-            HuaweiAncChoice(
-                label = stringResource(R.string.soundcore_anc_mode_manual),
-                selected = !isAdaptive,
-                onClick = { onSubModeChange(0) },
+            // 1. Off
+            AncRoundButton(
+                iconRes = R.drawable.ic_mydevices_anc_off,
+                label = stringResource(R.string.anc_mode_off),
+                selected = isOffSelected,
+                onClick = { onModeSelect(NoiseControlMode.OFF, false) },
                 compact = compact,
                 modifier = Modifier.weight(1f),
             )
-            HuaweiAncChoice(
-                label = stringResource(R.string.soundcore_anc_mode_adaptive),
-                selected = isAdaptive,
+            // 2. Noise cancelling (Manual)
+            AncRoundButton(
+                iconRes = R.drawable.ic_mydevices_anc_cancelling,
+                label = stringResource(R.string.anc_mode_cancelling),
+                selected = isCancellingSelected,
                 onClick = {
-                    sliderFloat = savedAdaptiveLevel.toFloat()
-                    onSubModeChange(savedAdaptiveLevel)
+                    onModeSelect(NoiseControlMode.NOISE_CANCELLATION, false)
+                    onHuaweiAncLevelChange?.invoke(savedManualLevel)
                 },
+                compact = compact,
+                modifier = Modifier.weight(1f),
+            )
+            // 3. Transparency
+            AncRoundButton(
+                iconRes = R.drawable.ic_mydevices_anc_transparency,
+                label = stringResource(R.string.anc_mode_transparency),
+                selected = isTransparencySelected,
+                onClick = { onModeSelect(NoiseControlMode.TRANSPARENCY, false) },
+                compact = compact,
+                modifier = Modifier.weight(1f),
+            )
+            // 4. Adaptive
+            AncRoundButton(
+                iconRes = R.drawable.ic_mydevices_anc_adaptive,
+                label = stringResource(R.string.anc_mode_adaptive),
+                selected = isAdaptiveSelected,
+                onClick = { onModeSelect(NoiseControlMode.NOISE_CANCELLATION, true) },
                 compact = compact,
                 modifier = Modifier.weight(1f),
             )
         }
 
-        if (isAdaptive) {
+        // Show strength slider ONLY when Noise Cancelling (Manual mode) is chosen
+        if (isCancellingSelected) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(
                         start = if (compact) 12.dp else 16.dp,
                         end = if (compact) 12.dp else 16.dp,
-                        top = if (compact) 8.dp else 12.dp,
+                        top = if (compact) 6.dp else 10.dp,
                     )
             ) {
                 Row(
@@ -282,13 +340,13 @@ private fun SoundcoreAncSelector(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = stringResource(R.string.soundcore_anc_adaptive_level),
+                        text = stringResource(R.string.soundcore_anc_manual_level),
                         fontSize = if (compact) 12.sp else 13.sp,
                         fontWeight = FontWeight.Normal,
                         color = MiuixTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                     )
                     Text(
-                        text = stringResource(R.string.soundcore_anc_level, savedAdaptiveLevel),
+                        text = stringResource(R.string.soundcore_anc_level, savedManualLevel),
                         fontSize = if (compact) 12.sp else 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MiuixTheme.colorScheme.primary,
@@ -299,22 +357,22 @@ private fun SoundcoreAncSelector(
                     value = sliderFloat,
                     onValueChange = { newFloat ->
                         sliderFloat = newFloat
-                        val rounded = newFloat.roundToInt().coerceIn(1, 5)
-                        if (rounded != savedAdaptiveLevel) {
-                            savedAdaptiveLevel = rounded
-                            onSubModeChange(rounded)
+                        val rounded = newFloat.roundToInt().coerceIn(1, maxManualLevel)
+                        if (rounded != savedManualLevel) {
+                            savedManualLevel = rounded
+                            onHuaweiAncLevelChange?.invoke(rounded)
                         }
                     },
                     onValueChangeFinished = {
-                        val rounded = sliderFloat.roundToInt().coerceIn(1, 5)
+                        val rounded = sliderFloat.roundToInt().coerceIn(1, maxManualLevel)
                         sliderFloat = rounded.toFloat()
-                        if (rounded != savedAdaptiveLevel) {
-                            savedAdaptiveLevel = rounded
-                            onSubModeChange(rounded)
+                        if (rounded != savedManualLevel) {
+                            savedManualLevel = rounded
+                            onHuaweiAncLevelChange?.invoke(rounded)
                         }
                     },
-                    valueRange = 1f..5f,
-                    steps = 3,
+                    valueRange = 1f..maxManualLevel.toFloat(),
+                    steps = if (maxManualLevel > 2) maxManualLevel - 2 else 0,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp),
@@ -326,12 +384,12 @@ private fun SoundcoreAncSelector(
                         .padding(horizontal = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    for (i in 1..5) {
+                    for (i in 1..maxManualLevel) {
                         Text(
                             text = i.toString(),
                             fontSize = if (compact) 11.sp else 12.sp,
-                            fontWeight = if (savedAdaptiveLevel == i) FontWeight.Bold else FontWeight.Normal,
-                            color = if (savedAdaptiveLevel == i) {
+                            fontWeight = if (savedManualLevel == i) FontWeight.Bold else FontWeight.Normal,
+                            color = if (savedManualLevel == i) {
                                 MiuixTheme.colorScheme.primary
                             } else {
                                 MiuixTheme.colorScheme.onBackground.copy(alpha = 0.4f)
@@ -341,6 +399,56 @@ private fun SoundcoreAncSelector(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AncRoundButton(
+    iconRes: Int,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val primary = MiuixTheme.colorScheme.primary
+    val circleSize = if (compact) 44.dp else 52.dp
+    val iconSize = if (compact) 22.dp else 24.dp
+
+    Column(
+        modifier = modifier
+            .pressable(interactionSource = interactionSource, indication = SinkFeedback())
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(circleSize)
+                .background(
+                    color = if (selected) primary else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.08f),
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = label,
+                tint = if (selected) Color.White else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.75f),
+                modifier = Modifier.size(iconSize),
+            )
+        }
+        Spacer(modifier = Modifier.height(if (compact) 4.dp else 6.dp))
+        Text(
+            text = label,
+            fontSize = if (compact) 10.sp else 11.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            color = if (selected) primary else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

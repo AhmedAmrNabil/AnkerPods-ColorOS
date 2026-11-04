@@ -26,6 +26,8 @@ import moe.chenxy.huaweipods.BuildConfig
 import moe.chenxy.huaweipods.backend.EarbudBackend
 import moe.chenxy.huaweipods.backend.EarbudState
 import moe.chenxy.huaweipods.broadcast.sendHeadsetAppBroadcast
+import moe.chenxy.huaweipods.config.ConfigManager
+import moe.chenxy.huaweipods.config.LowLatencyPrefs
 import moe.chenxy.huaweipods.hook.ColorOsSystemBatteryBridge
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.NoiseControlMode
@@ -98,6 +100,22 @@ object SoundcoreBackend : EarbudBackend {
                 HuaweiPodsAction.ACTION_CYCLE_ANC -> {
                     cycleAncMode()
                 }
+                HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_SET -> {
+                    val enabled = receivedIntent.getBooleanExtra(HuaweiPodsAction.EXTRA_HUAWEI_LOW_LATENCY_ENABLED, false)
+                    setGamingMode(enabled)
+                }
+                HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_SET -> {
+                    val enabled = receivedIntent.getBooleanExtra(HuaweiPodsAction.EXTRA_HUAWEI_WEAR_DETECTION_ENABLED, false)
+                    setWearingDetection(enabled)
+                }
+                HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_REFRESH -> {
+                    val currentWear = SoundcoreStateManager.wearDetection
+                    if (currentWear != null) {
+                        sendWearDetection(currentWear)
+                    } else {
+                        sendRequestState(force = true)
+                    }
+                }
                 HuaweiPodsAction.ACTION_REFRESH_STATUS,
                 HuaweiPodsAction.ACTION_PODS_UI_INIT -> {
                     Log.i(TAG, "Received $action: refreshing status and polling earbud state")
@@ -109,6 +127,8 @@ object SoundcoreBackend : EarbudBackend {
                     _state.value.battery?.takeIf { it.left?.isConnected == true || it.right?.isConnected == true }?.let { sendBattery(it) }
                     sendAnc(_state.value.ancMode)
                     _state.value.ancSubMode?.let { sendAncLevel(it) }
+                    SoundcoreStateManager.gamingMode?.let { sendLowLatency(it) }
+                    SoundcoreStateManager.wearDetection?.let { sendWearDetection(it) }
                     sendRequestState()
                 }
             }
@@ -268,7 +288,9 @@ object SoundcoreBackend : EarbudBackend {
                     val ancMode = SoundcoreStateManager.ancMode
                     val ancSubMode = SoundcoreStateManager.ancSubMode
                     val isAdaptive = SoundcoreStateManager.isAdaptiveAnc
-                    Log.i(TAG, "Soundcore state update received: L=${battery.left?.battery}% R=${battery.right?.battery}% Case=${battery.case?.battery}% ANC=$ancMode Sub=$ancSubMode Adaptive=$isAdaptive")
+                    val gamingMode = SoundcoreStateManager.gamingMode
+                    val wearDetection = SoundcoreStateManager.wearDetection
+                    Log.i(TAG, "Soundcore state update received: L=${battery.left?.battery}% R=${battery.right?.battery}% Case=${battery.case?.battery}% ANC=$ancMode Sub=$ancSubMode Adaptive=$isAdaptive Gaming=$gamingMode Wear=$wearDetection")
                     _state.update {
                         it.copy(
                             battery = battery,
@@ -281,6 +303,12 @@ object SoundcoreBackend : EarbudBackend {
                     sendBattery(battery)
                     sendAnc(ancMode, isAdaptive)
                     ancSubMode?.let { sendAncLevel(it) }
+                    gamingMode?.let {
+                        sendLowLatency(it)
+                        val prefs = context.getSharedPreferences(ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
+                        LowLatencyPrefs.setDesired(prefs, null, device.address, HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC, it)
+                    }
+                    wearDetection?.let { sendWearDetection(it) }
                     MiuiStrongToastUtil.showPodsNotificationByMiuiBt(context, battery, device)
                 }
             }
@@ -397,6 +425,52 @@ object SoundcoreBackend : EarbudBackend {
         setAncMode(next)
     }
 
+    fun setGamingMode(enabled: Boolean) {
+        val packet = SoundcorePacket.buildSetGamingModePacket(enabled)
+        val success = sendRawPacket(packet)
+        SoundcoreStateManager.gamingMode = enabled
+        sendLowLatency(enabled, writeSuccess = success)
+        activeDevice?.let { dev ->
+            appContext?.let { ctx ->
+                val prefs = ctx.getSharedPreferences(ConfigManager.PREFS_NAME, Context.MODE_PRIVATE)
+                LowLatencyPrefs.setDesired(prefs, null, dev.address, HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC, enabled)
+            }
+        }
+        Log.i(TAG, "Set gaming mode (low latency): enabled=$enabled success=$success")
+    }
+
+    fun setWearingDetection(enabled: Boolean) {
+        val packet = SoundcorePacket.buildSetWearingDetectionPacket(enabled)
+        val success = sendRawPacket(packet)
+        SoundcoreStateManager.wearDetection = enabled
+        sendWearDetection(enabled, writeSuccess = success)
+        Log.i(TAG, "Set wearing detection (auto play/pause): enabled=$enabled success=$success")
+    }
+
+    private fun sendLowLatency(enabled: Boolean, writeSuccess: Boolean? = null) {
+        val ctx = appContext ?: return
+        val fill: Intent.() -> Unit = {
+            putExtra(HuaweiPodsAction.EXTRA_HUAWEI_LOW_LATENCY_ENABLED, enabled)
+            writeSuccess?.let {
+                putExtra(HuaweiPodsAction.EXTRA_HUAWEI_LOW_LATENCY_WRITE_SUCCESS, it)
+            }
+        }
+        sendAppBroadcast(ctx, HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_CHANGED, fill)
+        sendExternalBroadcast(ctx, HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_CHANGED, fill)
+    }
+
+    private fun sendWearDetection(enabled: Boolean, writeSuccess: Boolean? = null) {
+        val ctx = appContext ?: return
+        val fill: Intent.() -> Unit = {
+            putExtra(HuaweiPodsAction.EXTRA_HUAWEI_WEAR_DETECTION_ENABLED, enabled)
+            writeSuccess?.let {
+                putExtra(HuaweiPodsAction.EXTRA_HUAWEI_WEAR_DETECTION_WRITE_SUCCESS, it)
+            }
+        }
+        sendAppBroadcast(ctx, HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_CHANGED, fill)
+        sendExternalBroadcast(ctx, HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_CHANGED, fill)
+    }
+
     @Volatile
     private var lastRequestStateTime = 0L
 
@@ -435,6 +509,9 @@ object SoundcoreBackend : EarbudBackend {
             addHuaweiPodsAction(HuaweiPodsAction.ACTION_PODS_UI_INIT)
             addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_ANC_LEVEL_SET)
             addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_ANC_REFRESH)
+            addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_SET)
+            addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_SET)
+            addHuaweiPodsAction(HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_REFRESH)
         }
         runCatching {
             context.registerReceiver(controlReceiver, filter, Context.RECEIVER_EXPORTED)

@@ -49,6 +49,7 @@ import moe.chenxy.huaweipods.pods.NoiseControlMode
 import moe.chenxy.huaweipods.pods.displayName
 import moe.chenxy.huaweipods.pods.encodeHuaweiDeviceRouteForBroadcast
 import moe.chenxy.huaweipods.pods.supportsLowLatencyControl
+import moe.chenxy.huaweipods.pods.supportsWearDetection
 import moe.chenxy.huaweipods.pods.isSupported
 import moe.chenxy.huaweipods.pods.resolveHuaweiDeviceRoute
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
@@ -122,7 +123,7 @@ object ColorOsMyDevicesHook : HookContext() {
             }
             2048 -> 0 // both earbuds worn (unblocks IconTextSelector clicks on ANC & Adaptive)
             8192 -> 1 // single-ear noise switch supported
-            32 -> 1 // wear detection supported
+            32 -> if (latestWearDetection[upper] == false) 0 else 1 // wear detection status (default on until read)
             4096 -> if (latestLowLatency[upper] == true) 1 else 0
             else -> 0
         }
@@ -365,6 +366,32 @@ object ColorOsMyDevicesHook : HookContext() {
                         dispatchAncSelect(context, addr, mode, isAdaptive, subMode)
                     }
                     result = null
+                } else if (feat == 32 && isSupportedAddress(addr)) {
+                    val enabled = value == 1
+                    latestWearDetection[addr.uppercase()] = enabled
+                    refreshQuickControls(addr.uppercase())
+                    val context = currentApplicationOrNull() ?: statusReceiverContext
+                    if (context != null) {
+                        val dev = bluetoothDevice(addr)
+                        val route = resolveHuaweiDeviceRoute(addr, dev?.name ?: dev?.alias)
+                        dev?.let {
+                            sendControl(context, HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_SET, it, route) {
+                                putExtra(HuaweiPodsAction.EXTRA_HUAWEI_WEAR_DETECTION_ENABLED, enabled)
+                            }
+                        }
+                    }
+                    result = null
+                } else if (feat == 4096 && isSupportedAddress(addr)) {
+                    val enabled = value == 1
+                    latestLowLatency[addr.uppercase()] = enabled
+                    refreshQuickControls(addr.uppercase())
+                    val context = currentApplicationOrNull() ?: statusReceiverContext
+                    if (context != null) {
+                        val dev = bluetoothDevice(addr)
+                        val route = resolveHuaweiDeviceRoute(addr, dev?.name ?: dev?.alias)
+                        dev?.let { requestLowLatency(context, it, route, enabled) }
+                    }
+                    result = null
                 }
             }
         }.onFailure { Log.w(TAG, "OplusBluetoothAdapterWrapper.W hook unavailable", it) }
@@ -479,6 +506,28 @@ object ColorOsMyDevicesHook : HookContext() {
                     val context = currentApplicationOrNull() ?: statusReceiverContext
                     if (context != null) {
                         dispatchAncSelect(context, device.address, mode, isAdaptive, subMode)
+                    }
+                    result = true
+                } else if (device != null && featureId == 32 && isSupportedDevice(device)) {
+                    val enabled = value == 1
+                    latestWearDetection[device.address.uppercase()] = enabled
+                    refreshQuickControls(device.address.uppercase())
+                    val context = currentApplicationOrNull() ?: statusReceiverContext
+                    if (context != null) {
+                        val route = resolveHuaweiDeviceRoute(device.address, device.name ?: device.alias)
+                        sendControl(context, HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_SET, device, route) {
+                            putExtra(HuaweiPodsAction.EXTRA_HUAWEI_WEAR_DETECTION_ENABLED, enabled)
+                        }
+                    }
+                    result = true
+                } else if (device != null && featureId == 4096 && isSupportedDevice(device)) {
+                    val enabled = value == 1
+                    latestLowLatency[device.address.uppercase()] = enabled
+                    refreshQuickControls(device.address.uppercase())
+                    val context = currentApplicationOrNull() ?: statusReceiverContext
+                    if (context != null) {
+                        val route = resolveHuaweiDeviceRoute(device.address, device.name ?: device.alias)
+                        requestLowLatency(context, device, route, enabled)
                     }
                     result = true
                 }
@@ -993,6 +1042,28 @@ object ColorOsMyDevicesHook : HookContext() {
             hookAfter(onResumeMethod) {
                 (instance as? Activity)?.let { requestCurrentStatus(it) }
                 applySettingImage(instance)
+
+                val devField = runCatching { actCls.getDeclaredField("w0").apply { isAccessible = true } }.getOrNull()
+                val dev = devField?.get(instance) as? BluetoothDevice
+                val addr = dev?.address ?: runCatching {
+                    val act = instance as? Activity
+                    act?.intent?.getStringExtra("address")
+                        ?: (act?.intent?.getParcelableExtra("device", BluetoothDevice::class.java) as? BluetoothDevice)?.address
+                }.getOrNull()
+                if (addr != null && isSupportedAddress(addr)) {
+                    val curWear = latestWearDetection[addr.uppercase()]
+                    if (curWear != null) {
+                        runCatching {
+                            val h1Method = actCls.getDeclaredMethod("h1").apply { isAccessible = true }
+                            val switchView = h1Method.invoke(instance)
+                            if (switchView != null) {
+                                val qMethod = switchView.javaClass.getMethod("Q", Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+                                qMethod.invoke(switchView, curWear, false)
+                            }
+                        }
+                    }
+                }
+
                 val p1Method = runCatching { actCls.getDeclaredMethod("p1").apply { isAccessible = true } }.getOrNull()
                 val imgView = p1Method?.invoke(instance) as? ImageView
                 if (imgView != null && imgView.tag != "soundcore_predraw_attached") {
@@ -1801,7 +1872,7 @@ object ColorOsMyDevicesHook : HookContext() {
     }
 
     private fun requestWearDetectionState(context: Context, device: BluetoothDevice, route: HuaweiDeviceRoute) {
-        if (!HuaweiWearDetectionController.supports(route)) return
+        if (!route.supportsWearDetection) return
         runCatching {
             sendControl(context, HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_REFRESH, device, route) {}
         }.onFailure {

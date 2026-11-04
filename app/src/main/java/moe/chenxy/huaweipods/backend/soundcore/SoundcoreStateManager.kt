@@ -38,6 +38,11 @@ object SoundcoreStateManager {
     var isAdaptiveAnc: Boolean = false
         internal set
 
+    var gamingMode: Boolean? = null
+        internal set
+    var wearDetection: Boolean? = null
+        internal set
+
     fun levelToPercent(level: Int, maxLevel: Int = 5): Int {
         if (level == 255 || level < 0) return 0
         if (level > maxLevel) return level.coerceIn(0, 100)
@@ -83,6 +88,16 @@ object SoundcoreStateManager {
                     isAdaptiveAnc = true
                 }
             }
+        }
+
+        // Gaming mode at offset 143 if present
+        if (body.size > 143) {
+            gamingMode = (body[143].toInt() and 0xFF) == 1
+        }
+
+        // Auto play/pause (wear detection) at offset 152 if present
+        if (body.size > 152) {
+            wearDetection = (body[152].toInt() and 0xFF) == 1
         }
 
         return processBatteryReading(rawL, rawR, rawCase, leftChg, rightChg, caseChg)
@@ -202,5 +217,7 @@ object SoundcoreStateManager {
         ancMode = NoiseControlMode.OFF
         ancSubMode = null
         isAdaptiveAnc = false
+        gamingMode = null
+        wearDetection = null
     }
 }

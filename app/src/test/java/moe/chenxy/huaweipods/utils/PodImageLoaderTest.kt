@@ -201,6 +201,18 @@ class PodImageLoaderTest {
     }
 
     @Test
+    fun `Soundcore Liberty 4 NC uses its dedicated fallback images`() {
+        assertEquals(
+            R.drawable.soundcore_liberty_4_nc,
+            PodImageLoader.modelFallbackResId(
+                HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC,
+                PodImageResource.BOX,
+                R.drawable.img_box,
+            ),
+        )
+    }
+
+    @Test
     fun `models without dedicated images keep every global fallback`() {
         val routesWithoutDedicatedImages = listOf(
             HuaweiDeviceRoute.HUAWEI_FREEBUDS3,

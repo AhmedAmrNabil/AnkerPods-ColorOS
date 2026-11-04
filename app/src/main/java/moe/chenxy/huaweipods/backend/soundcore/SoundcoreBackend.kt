@@ -100,6 +100,7 @@ object SoundcoreBackend : EarbudBackend {
                 }
                 HuaweiPodsAction.ACTION_REFRESH_STATUS,
                 HuaweiPodsAction.ACTION_PODS_UI_INIT -> {
+                    Log.i(TAG, "Received $action: refreshing status and polling earbud state")
                     activeDevice?.takeIf { _state.value.isConnected }?.let { dev ->
                         val name = dev.name ?: dev.alias ?: SoundcoreDeviceIdentifier.DISPLAY_NAME_A3947
                         sendConnectionState("connected")
@@ -208,7 +209,7 @@ object SoundcoreBackend : EarbudBackend {
         // Launch periodic refresh / keep-alive heartbeat
         val heartbeatJob = backendScope?.launch {
             while (isActive && _state.value.isConnected) {
-                delay(30_000L)
+                delay(60_000L)
                 sendRequestState()
             }
         }
@@ -396,7 +397,17 @@ object SoundcoreBackend : EarbudBackend {
         setAncMode(next)
     }
 
-    fun sendRequestState() {
+    @Volatile
+    private var lastRequestStateTime = 0L
+
+    fun sendRequestState(force: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastRequestStateTime < 1000L) {
+            Log.d(TAG, "sendRequestState throttled (${now - lastRequestStateTime}ms < 1000ms)")
+            return
+        }
+        lastRequestStateTime = now
+        Log.i(TAG, "sendRequestState: polling earbud state over RFCOMM")
         val packetBytes = SoundcorePacket.buildRequestStatePacket()
         sendRawPacket(packetBytes)
     }

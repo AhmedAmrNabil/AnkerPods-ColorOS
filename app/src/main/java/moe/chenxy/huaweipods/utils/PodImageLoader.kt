@@ -151,6 +151,8 @@ object PodImageLoader {
             PodImageResource.LEFT, PodImageResource.RIGHT -> globalFallbackResId
         }
 
+        HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC -> R.drawable.soundcore_liberty_4_nc
+
         else -> globalFallbackResId
     }
 

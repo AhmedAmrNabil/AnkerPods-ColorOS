@@ -390,7 +390,6 @@ object ColorOsWirelessSettingsHook : HookContext() {
             }
         }.onFailure { Log.w(TAG, "BluetoothUtils.getIconFromDeviceType hook unavailable", it) }
     }
-    }
 
     private fun hookVendorId() {
         val method = findMethod(BLUETOOTH_NATIVE, "getDeviceVendorId", BluetoothDevice::class.java)

@@ -50,8 +50,6 @@ object HuaweiPodsBroadcastTrustPolicy {
     )
 
     private val myDevicesStateActions = setOf(
-        HuaweiPodsAction.ACTION_PODS_CONNECTED,
-        HuaweiPodsAction.ACTION_PODS_DISCONNECTED,
         HuaweiPodsAction.ACTION_PODS_BATTERY_CHANGED,
         HuaweiPodsAction.ACTION_PODS_ANC_CHANGED,
         HuaweiPodsAction.ACTION_PODS_DISCONNECTED,
@@ -71,10 +69,10 @@ object HuaweiPodsBroadcastTrustPolicy {
     internal fun shouldAcceptBoundHeadsetEvent(action: String?, uidPackages: Array<String>?): Boolean =
         isHeadsetLifecycleAction(action) && uidPackages?.any(::isTrustedBluetoothStateSender) == true
 
-    /** 我的设备消费蓝牙进程或应用后端广播的耳机状态。 */
+    /** 我的设备只消费蓝牙进程确认的四类状态，不接受控制动作或其他宿主伪造的状态。 */
     fun shouldAcceptMyDevicesStateBroadcast(action: String?, senderPackage: String?): Boolean =
         HuaweiPodsAction.canonical(action) in myDevicesStateActions &&
-            (senderPackage == PACKAGE_BLUETOOTH || senderPackage == PACKAGE_APP)
+            isTrustedBluetoothStateSender(senderPackage)
 
     /** 蓝牙设置消费蓝牙进程或应用后端广播的耳机状态。 */
     fun shouldAcceptWirelessSettingsStateBroadcast(action: String?, senderPackage: String?): Boolean =

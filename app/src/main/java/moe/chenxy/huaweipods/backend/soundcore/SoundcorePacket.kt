@@ -147,8 +147,8 @@ object SoundcorePacket {
                             0x01,
                             0x00, // Manual (nc_mode = 0)
                             0x01,
-                            0x01,
-                            0x03
+                            0x00, // environment_detection: false in manual mode
+                            0x00  // transportation_mode: 0
                         )
                     }
                 }

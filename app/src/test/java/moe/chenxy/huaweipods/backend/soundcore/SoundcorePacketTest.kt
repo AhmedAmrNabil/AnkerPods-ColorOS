@@ -156,18 +156,23 @@ class SoundcorePacketTest {
         assertEquals(0x00, manualPacket[9].toInt() and 0xFF) // ambient: ANC
         assertEquals(0x50, manualPacket[10].toInt() and 0xFF)
         assertEquals(0x00, manualPacket[12].toInt() and 0xFF) // nc_mode: Manual
+        assertEquals(0x00, manualPacket[14].toInt() and 0xFF) // environment_detection: 0 in manual mode
+        assertEquals(0x00, manualPacket[15].toInt() and 0xFF) // transportation_mode: 0
 
         // Adaptive level 1 (submode 1, isAdaptive=true)
         val adaptivePacket1 = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 1, isAdaptive = true)
         assertEquals(0x00, adaptivePacket1[9].toInt() and 0xFF)
         assertEquals(0x51, adaptivePacket1[10].toInt() and 0xFF) // (5 << 4) | 1
         assertEquals(0x01, adaptivePacket1[12].toInt() and 0xFF) // nc_mode: Adaptive
+        assertEquals(0x01, adaptivePacket1[14].toInt() and 0xFF) // environment_detection: 1 in adaptive mode
+        assertEquals(0x00, adaptivePacket1[15].toInt() and 0xFF) // transportation_mode: 0
 
         // Adaptive level 5 (submode 5, isAdaptive=true)
         val adaptivePacket5 = SoundcorePacket.buildSetSoundModesPacket(NoiseControlMode.NOISE_CANCELLATION, 5, isAdaptive = true)
         assertEquals(0x00, adaptivePacket5[9].toInt() and 0xFF)
         assertEquals(0x55, adaptivePacket5[10].toInt() and 0xFF) // (5 << 4) | 5
         assertEquals(0x01, adaptivePacket5[12].toInt() and 0xFF) // nc_mode: Adaptive
+        assertEquals(0x01, adaptivePacket5[14].toInt() and 0xFF) // environment_detection: 1 in adaptive mode
 
         // Adaptive level with cached manual level 2 preserves manual level in high nibble
         val adaptiveWithCachedManual = SoundcorePacket.buildSetSoundModesPacket(
@@ -179,6 +184,7 @@ class SoundcorePacketTest {
         )
         assertEquals(0x23, adaptiveWithCachedManual[10].toInt() and 0xFF) // (2 << 4) | 3
         assertEquals(0x01, adaptiveWithCachedManual[12].toInt() and 0xFF) // nc_mode: Adaptive
+        assertEquals(0x01, adaptiveWithCachedManual[14].toInt() and 0xFF) // environment_detection: 1
     }
 
     @Test

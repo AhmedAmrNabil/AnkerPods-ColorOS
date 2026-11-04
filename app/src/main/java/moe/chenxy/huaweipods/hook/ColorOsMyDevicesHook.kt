@@ -352,7 +352,7 @@ object ColorOsMyDevicesHook : HookContext() {
                 if (feat == 4 && isSupportedAddress(addr)) {
                     val (mode, isAdaptive, subMode) = when (value) {
                         1 -> Triple(NoiseControlMode.OFF, false, null)
-                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, 5)
+                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, null)
                         3 -> Triple(NoiseControlMode.TRANSPARENCY, false, null)
                         4 -> Triple(NoiseControlMode.NOISE_CANCELLATION, true, 3)
                         else -> Triple(NoiseControlMode.OFF, false, null)
@@ -494,7 +494,7 @@ object ColorOsMyDevicesHook : HookContext() {
                 if (device != null && featureId == 4 && isSupportedDevice(device)) {
                     val (mode, isAdaptive, subMode) = when (value) {
                         1 -> Triple(NoiseControlMode.OFF, false, null)
-                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, 5)
+                        2 -> Triple(NoiseControlMode.NOISE_CANCELLATION, false, null)
                         3 -> Triple(NoiseControlMode.TRANSPARENCY, false, null)
                         4 -> Triple(NoiseControlMode.NOISE_CANCELLATION, true, 3)
                         else -> Triple(NoiseControlMode.OFF, false, null)
@@ -1810,7 +1810,6 @@ object ColorOsMyDevicesHook : HookContext() {
             sendControl(context, HuaweiPodsAction.ACTION_ANC_SELECT, device, route) {
                 putExtra("status", mode.broadcastStatus)
                 putExtra("is_adaptive", false)
-                putExtra("submode", 5)
             }
             Log.i(TAG, "Noise control requested mode=$mode")
         }.onFailure {

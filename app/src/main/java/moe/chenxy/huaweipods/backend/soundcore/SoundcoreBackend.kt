@@ -71,6 +71,13 @@ object SoundcoreBackend : EarbudBackend {
     private var connectionJob: Job? = null
     private var receiverRegistered = false
 
+    @Volatile
+    private var lastSetSoundModesTime: Long = 0L
+    @Volatile
+    private var pendingAncMode: NoiseControlMode? = null
+    @Volatile
+    private var pendingIsAdaptive: Boolean? = null
+
     private val controlReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val ctx = context ?: return
@@ -95,7 +102,7 @@ object SoundcoreBackend : EarbudBackend {
                     } else if (isAdaptive) {
                         if (activeModel == SoundcoreModel.A3952) 0 else 3
                     } else {
-                        if (activeModel == SoundcoreModel.A3952) 3 else 5
+                        SoundcoreStateManager.cachedManualAncLevel
                     }
                     if (mode != NoiseControlMode.UNKNOWN) {
                         setAncMode(mode, subMode, isAdaptive)
@@ -316,6 +323,8 @@ object SoundcoreBackend : EarbudBackend {
     private fun handleInboundPacket(context: Context, device: BluetoothDevice, packet: SoundcoreInboundPacket) {
         when (packet.command) {
             SoundcorePacket.CMD_STATE_UPDATE -> {
+                val now = SystemClock.elapsedRealtime()
+                val isPending = (now - lastSetSoundModesTime < 1500L) && pendingAncMode != null
                 val success = SoundcoreStateManager.updateFromStateUpdate(packet.body, activeModel)
                 if (success && SoundcoreStateManager.isReady) {
                     activeModel = SoundcoreStateManager.activeModel
@@ -325,12 +334,27 @@ object SoundcoreBackend : EarbudBackend {
                         activeRoute = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
                     }
                     val battery = SoundcoreStateManager.toBatteryParams()
-                    val ancMode = SoundcoreStateManager.ancMode
-                    val ancSubMode = SoundcoreStateManager.ancSubMode
-                    val isAdaptive = SoundcoreStateManager.isAdaptiveAnc
+                    val rawAncMode = SoundcoreStateManager.ancMode
+                    val rawAncSubMode = SoundcoreStateManager.ancSubMode
+                    val rawIsAdaptive = SoundcoreStateManager.isAdaptiveAnc
+
+                    val ancMode = if (isPending) pendingAncMode!! else rawAncMode
+                    val isAdaptive = if (isPending) pendingIsAdaptive!! else rawIsAdaptive
+                    val ancSubMode = if (isPending) {
+                        if (isAdaptive) rawAncSubMode else SoundcoreStateManager.cachedManualAncLevel
+                    } else {
+                        rawAncSubMode
+                    }
+
+                    if (isPending) {
+                        SoundcoreStateManager.ancMode = ancMode
+                        SoundcoreStateManager.isAdaptiveAnc = isAdaptive
+                        SoundcoreStateManager.ancSubMode = ancSubMode
+                    }
+
                     val gamingMode = SoundcoreStateManager.gamingMode
                     val wearDetection = SoundcoreStateManager.wearDetection
-                    Log.i(TAG, "Soundcore state update received ($activeModel): L=${battery.left?.battery}% R=${battery.right?.battery}% Case=${battery.case?.battery}% ANC=$ancMode Sub=$ancSubMode Adaptive=$isAdaptive Gaming=$gamingMode Wear=$wearDetection")
+                    Log.i(TAG, "Soundcore state update received ($activeModel): L=${battery.left?.battery}% R=${battery.right?.battery}% Case=${battery.case?.battery}% ANC=$ancMode Sub=$ancSubMode Adaptive=$isAdaptive Gaming=$gamingMode Wear=$wearDetection (isPending=$isPending)")
                     _state.update {
                         it.copy(
                             battery = battery,
@@ -378,6 +402,8 @@ object SoundcoreBackend : EarbudBackend {
                 }
             }
             SoundcorePacket.CMD_SOUND_MODES_INBOUND -> {
+                pendingAncMode = null
+                pendingIsAdaptive = null
                 val soundModes = SoundcorePacket.parseSoundModesWithSubMode(packet.body, activeModel)
                 if (packet.body.size > 1 && soundModes.ancMode == NoiseControlMode.NOISE_CANCELLATION && !soundModes.isAdaptive) {
                     val manual = (packet.body[1].toInt() and 0xF0) shr 4
@@ -419,6 +445,9 @@ object SoundcoreBackend : EarbudBackend {
 
         activeRoute = HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
         activeModel = SoundcoreModel.A3947
+        pendingAncMode = null
+        pendingIsAdaptive = null
+        lastSetSoundModesTime = 0L
         SoundcoreStateManager.onDisconnect()
         ColorOsSystemBatteryBridge.clear(context, device)
         MiuiStrongToastUtil.cancelPodsNotificationByMiuiBt(context, device)
@@ -457,6 +486,9 @@ object SoundcoreBackend : EarbudBackend {
             model = activeModel,
             cachedManualLevel = SoundcoreStateManager.cachedManualAncLevel,
         )
+        lastSetSoundModesTime = SystemClock.elapsedRealtime()
+        pendingAncMode = mode
+        pendingIsAdaptive = isAdaptive
         sendRawPacket(packetBytes)
 
         SoundcoreStateManager.ancMode = mode
@@ -471,10 +503,6 @@ object SoundcoreBackend : EarbudBackend {
         }
         sendAnc(mode, isAdaptive)
         sendAncLevel(SoundcoreStateManager.cachedManualAncLevel)
-
-        if (mode == NoiseControlMode.NOISE_CANCELLATION) {
-            sendRequestState(force = true)
-        }
 
         val currentDevice = activeDevice
         val currentContext = appContext

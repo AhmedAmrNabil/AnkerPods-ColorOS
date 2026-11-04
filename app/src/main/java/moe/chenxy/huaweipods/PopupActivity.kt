@@ -258,7 +258,12 @@ private fun PopupContent(
                                             transparencySubMode.value = subMode
                                         }
                                     NoiseControlMode.UNKNOWN,
-                                    NoiseControlMode.OFF -> Unit
+                                    NoiseControlMode.OFF -> {
+                                        if (target.route.supportsSoundcoreAnc && target.route.supportsAncSubMode(subMode)) {
+                                            ancLevel.value = subMode
+                                            hasAncLevel.value = true
+                                        }
+                                    }
                                 }
                             }
                     }
@@ -374,6 +379,13 @@ private fun PopupContent(
         }
         ancMode.value = targetMode
         isAdaptiveAnc.value = isAdaptive
+        if (targetMode == NoiseControlMode.NOISE_CANCELLATION && !isAdaptive) {
+            val effSubMode = targetSubMode?.takeIf(route::supportsAncSubMode)
+                ?: ancLevel.value.takeIf { hasAncLevel.value && route.supportsAncSubMode(it) }
+                ?: (if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 3 else 5)
+            ancLevel.value = effSubMode
+            hasAncLevel.value = true
+        }
         Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
             putPopupTarget(target)
             putExtra("status", targetMode.broadcastStatus)
@@ -493,7 +505,7 @@ private fun PopupContent(
                         ancLevel.value
                     },
                     onAncModeChange = ::setAncMode,
-                    onAncModeSelect = { mode, adaptive -> setAncMode(mode, adaptive) },
+                    onAncModeSelect = { mode, adaptive, subMode -> setAncMode(mode, adaptive, subMode) },
                     onAncLevelChange = ancLevelChange,
                     deviceRoute = deviceRoute,
                     showAnc = showAnc,
@@ -516,7 +528,7 @@ private fun PopupContent(
                         ancLevel.value
                     },
                     onAncModeChange = ::setAncMode,
-                    onAncModeSelect = { mode, adaptive -> setAncMode(mode, adaptive) },
+                    onAncModeSelect = { mode, adaptive, subMode -> setAncMode(mode, adaptive, subMode) },
                     onAncLevelChange = ancLevelChange,
                     deviceRoute = deviceRoute,
                     showAnc = showAnc,
@@ -538,7 +550,7 @@ private fun PortraitPopupBody(
     isAdaptive: Boolean = false,
     ancLevel: Int,
     onAncModeChange: (NoiseControlMode) -> Unit,
-    onAncModeSelect: ((NoiseControlMode, Boolean) -> Unit)? = null,
+    onAncModeSelect: ((NoiseControlMode, Boolean, Int?) -> Unit)? = null,
     onAncLevelChange: ((Int) -> Unit)?,
     deviceRoute: HuaweiDeviceRoute,
     showAnc: Boolean,
@@ -611,7 +623,7 @@ private fun LandscapePopupBody(
     isAdaptive: Boolean = false,
     ancLevel: Int,
     onAncModeChange: (NoiseControlMode) -> Unit,
-    onAncModeSelect: ((NoiseControlMode, Boolean) -> Unit)? = null,
+    onAncModeSelect: ((NoiseControlMode, Boolean, Int?) -> Unit)? = null,
     onAncLevelChange: ((Int) -> Unit)?,
     deviceRoute: HuaweiDeviceRoute,
     showAnc: Boolean,

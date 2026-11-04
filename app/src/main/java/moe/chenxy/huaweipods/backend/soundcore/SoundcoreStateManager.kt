@@ -44,6 +44,7 @@ object SoundcoreStateManager {
         internal set
 
     var activeModel: SoundcoreModel = SoundcoreModel.A3947
+    var cachedManualAncLevel: Int = 5
         internal set
 
     fun levelToPercent(level: Int, maxLevel: Int = 5): Int {
@@ -82,17 +83,25 @@ object SoundcoreStateManager {
                         2 -> NoiseControlMode.OFF
                         else -> NoiseControlMode.UNKNOWN
                     }
+                    if (body.size > 122) {
+                        val manual = (body[122].toInt() and 0xF0) shr 4
+                        if (manual in 1..3) {
+                            cachedManualAncLevel = manual
+                        }
+                    }
                     if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 124) {
                         val ncMode = body[124].toInt() and 0xFF
                         if (ncMode == 0) {
-                            val manual = (body[122].toInt() and 0xF0) shr 4
-                            ancSubMode = if (manual in 1..3) manual else 3
+                            ancSubMode = cachedManualAncLevel
                             isAdaptiveAnc = false
                         } else {
                             val adaptive = body[122].toInt() and 0x0F
                             ancSubMode = if (adaptive in 0..2) adaptive else 0
                             isAdaptiveAnc = true
                         }
+                    } else if (ancMode != NoiseControlMode.NOISE_CANCELLATION) {
+                        ancSubMode = null
+                        isAdaptiveAnc = false
                     }
                 }
 
@@ -114,17 +123,25 @@ object SoundcoreStateManager {
                         2 -> NoiseControlMode.OFF
                         else -> NoiseControlMode.UNKNOWN
                     }
+                    if (body.size > 127) {
+                        val manual = (body[127].toInt() and 0xF0) shr 4
+                        if (manual in 1..5) {
+                            cachedManualAncLevel = manual
+                        }
+                    }
                     if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 129) {
                         val ncMode = body[129].toInt() and 0xFF
                         if (ncMode == 0) {
-                            val manual = (body[127].toInt() and 0xF0) shr 4
-                            ancSubMode = if (manual in 1..5) manual else 5
+                            ancSubMode = cachedManualAncLevel
                             isAdaptiveAnc = false
                         } else {
                             val adaptive = body[127].toInt() and 0x0F
                             ancSubMode = if (adaptive in 1..5) adaptive else 3
                             isAdaptiveAnc = true
                         }
+                    } else if (ancMode != NoiseControlMode.NOISE_CANCELLATION) {
+                        ancSubMode = null
+                        isAdaptiveAnc = false
                     }
                 }
 

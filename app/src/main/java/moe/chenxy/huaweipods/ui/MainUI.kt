@@ -485,7 +485,12 @@ internal fun MainUI(
                                             huaweiTransparencySubMode.value = subMode
                                         }
                                     NoiseControlMode.UNKNOWN,
-                                    NoiseControlMode.OFF -> Unit
+                                    NoiseControlMode.OFF -> {
+                                        if (route.supportsSoundcoreAnc && route.supportsAncSubMode(subMode)) {
+                                            huaweiAncLevel.value = subMode
+                                            hasHuaweiAncLevel.value = true
+                                        }
+                                    }
                                 }
                             }
                     }
@@ -765,6 +770,13 @@ internal fun MainUI(
         }
         ancMode.value = normalizedMode
         isAdaptiveAnc.value = isAdaptive
+        if (normalizedMode == NoiseControlMode.NOISE_CANCELLATION && !isAdaptive) {
+            val effSubMode = targetSubMode?.takeIf(route::supportsAncSubMode)
+                ?: huaweiAncLevel.value.takeIf { hasHuaweiAncLevel.value && route.supportsAncSubMode(it) }
+                ?: (if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 3 else 5)
+            huaweiAncLevel.value = effSubMode
+            hasHuaweiAncLevel.value = true
+        }
         Intent(HuaweiPodsAction.ACTION_ANC_SELECT).apply {
             putExtra("address", connectedDeviceAddress)
             putExtra("device_name", mainTitle.value)
@@ -1087,7 +1099,7 @@ internal fun MainUI(
                 displayAnc = displayAnc,
                 isAdaptiveAnc = isAdaptiveAnc.value,
                 onAncModeChange = { setAncMode(it) },
-                onAncModeSelect = { mode, adaptive -> setAncMode(mode, adaptive) },
+                onAncModeSelect = { mode, adaptive, subMode -> setAncMode(mode, adaptive, subMode) },
                 huaweiAncLevel = if (displayAnc == NoiseControlMode.TRANSPARENCY) {
                     huaweiTransparencySubMode.value
                         .takeIf { it in supportedTransparencySubModes(currentDeviceRoute()) }

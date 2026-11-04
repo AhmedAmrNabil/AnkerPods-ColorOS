@@ -68,6 +68,7 @@ import moe.chenxy.huaweipods.ui.components.FreeArcControls
 import moe.chenxy.huaweipods.ui.components.HuaweiGestureControls
 import moe.chenxy.huaweipods.ui.components.LowLatencyControl
 import moe.chenxy.huaweipods.ui.components.PodStatus
+import moe.chenxy.huaweipods.ui.components.WearDetectionControl
 import moe.chenxy.huaweipods.ui.components.WindNoiseReductionControl
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import top.yukonga.miuix.kmp.basic.Card
@@ -83,6 +84,7 @@ import moe.chenxy.huaweipods.pods.supportsGestureConfiguration
 import moe.chenxy.huaweipods.pods.supportsLowLatencyControl
 import moe.chenxy.huaweipods.pods.supportsSoundcoreAnc
 import moe.chenxy.huaweipods.pods.supportsTransparency
+import moe.chenxy.huaweipods.pods.supportsWearDetection
 import moe.chenxy.huaweipods.pods.supportsWindNoiseReduction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -451,6 +453,27 @@ private fun LazyListScope.podControlItems(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
             ) {
                 LowLatencyControl(
+                    address = connectedDeviceAddress,
+                    route = deviceRoute,
+                )
+            }
+        }
+    }
+
+    if (deviceRoute.supportsWearDetection &&
+        deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS5 &&
+        deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS5I &&
+        deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS6 &&
+        deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS6I &&
+        deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS7 &&
+        deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS7I &&
+        !deviceRoute.supportsGestureConfiguration
+    ) {
+        item {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            ) {
+                WearDetectionControl(
                     address = connectedDeviceAddress,
                     route = deviceRoute,
                 )

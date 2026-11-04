@@ -6,6 +6,7 @@ import moe.chenxy.huaweipods.pods.NoiseControlMode
 import moe.chenxy.huaweipods.pods.supportsAnc
 import moe.chenxy.huaweipods.pods.supportsLowLatencyControl
 import moe.chenxy.huaweipods.pods.supportsTransparency
+import moe.chenxy.huaweipods.pods.supportsWearDetection
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.PodParams
 
@@ -39,7 +40,7 @@ internal enum class ColorOsQuickToggle { LOW_LATENCY, WEAR_DETECTION }
 /** 只列出该机型已有抓包验证写入协议的开关。 */
 internal fun colorOsQuickToggles(route: HuaweiDeviceRoute): List<ColorOsQuickToggle> = buildList {
     if (route.supportsLowLatencyControl) add(ColorOsQuickToggle.LOW_LATENCY)
-    if (HuaweiWearDetectionController.supports(route)) add(ColorOsQuickToggle.WEAR_DETECTION)
+    if (route.supportsWearDetection) add(ColorOsQuickToggle.WEAR_DETECTION)
 }
 
 /** 开关文字带上当前状态；`enabled == null` 表示尚未从耳机读到状态。 */

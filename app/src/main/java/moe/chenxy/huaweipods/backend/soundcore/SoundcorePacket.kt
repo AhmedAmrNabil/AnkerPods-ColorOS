@@ -24,6 +24,8 @@ data class SoundcoreStateUpdate(
     val ancMode: NoiseControlMode,
     val ancSubMode: Int? = null,
     val isAdaptiveAnc: Boolean = false,
+    val gamingMode: Boolean? = null,
+    val wearDetection: Boolean? = null,
 )
 
 data class SoundcoreSoundModes(
@@ -42,6 +44,8 @@ object SoundcorePacket {
     const val CMD_BATTERY_CHARGING = 0x0401 // [0x01, 0x04]
     const val CMD_SOUND_MODES_INBOUND = 0x0106 // [0x06, 0x01]
     const val CMD_SET_SOUND_MODES_OUTBOUND = 0x8106 // [0x06, 0x81]
+    const val CMD_SET_GAMING_MODE = 0x8510 // [0x10, 0x85]
+    const val CMD_SET_WEARING_DETECTION = 0x8101 // [0x01, 0x81]
 
     fun calculateChecksum(data: ByteArray, offset: Int = 0, length: Int = data.size): Byte {
         var sum = 0
@@ -132,6 +136,20 @@ object SoundcorePacket {
             )
         }
         return buildPacket(byteArrayOf(0x06, 0x81.toByte()), body)
+    }
+
+    /**
+     * Builds the SetGamingMode (low latency) packet for A3947 (cmd [0x10, 0x85]).
+     */
+    fun buildSetGamingModePacket(enabled: Boolean): ByteArray {
+        return buildPacket(byteArrayOf(0x10, 0x85.toByte()), byteArrayOf(if (enabled) 0x01 else 0x00))
+    }
+
+    /**
+     * Builds the SetWearingDetection (auto play/pause) packet for A3947 (cmd [0x01, 0x81]).
+     */
+    fun buildSetWearingDetectionPacket(enabled: Boolean): ByteArray {
+        return buildPacket(byteArrayOf(0x01, 0x81.toByte()), byteArrayOf(if (enabled) 0x01 else 0x00))
     }
 
     /**
@@ -280,7 +298,24 @@ object SoundcorePacket {
             }
         }
 
-        return SoundcoreStateUpdate(battery, ancMode, ancSubMode, isAdaptiveAnc)
+        // Gaming mode at offset 143 if present
+        val gamingMode = if (body.size > 143) {
+            (body[143].toInt() and 0xFF) == 1
+        } else null
+
+        // Auto play/pause (wear detection) at offset 152 if present
+        val wearDetection = if (body.size > 152) {
+            (body[152].toInt() and 0xFF) == 1
+        } else null
+
+        return SoundcoreStateUpdate(
+            battery = battery,
+            ancMode = ancMode,
+            ancSubMode = ancSubMode,
+            isAdaptiveAnc = isAdaptiveAnc,
+            gamingMode = gamingMode,
+            wearDetection = wearDetection,
+        )
     }
 
     /**

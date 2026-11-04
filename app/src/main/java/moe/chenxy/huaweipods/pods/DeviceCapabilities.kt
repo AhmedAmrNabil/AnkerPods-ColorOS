@@ -35,6 +35,7 @@ data class HuaweiDeviceCapabilities(
     val supportsBackgroundBatteryRefresh: Boolean = false,
     val supportsGestureConfiguration: Boolean = false,
     val supportsLowLatencyControl: Boolean = false,
+    val supportsWearDetection: Boolean = false,
     val supportsWindNoiseReduction: Boolean = false,
     val supportsSoundcoreAnc: Boolean = false,
     val hasChargingCase: Boolean = false,
@@ -228,6 +229,8 @@ private val routeCapabilities = linkedMapOf(
         supportsAncStateReadback = true,
         supportsDiscreteAncLevels = false,
         supportsSoundcoreAnc = true,
+        supportsLowLatencyControl = true,
+        supportsWearDetection = true,
         hasChargingCase = true,
     ),
 )
@@ -302,6 +305,9 @@ val HuaweiDeviceRoute.supportsGestureConfiguration: Boolean
 
 val HuaweiDeviceRoute.supportsLowLatencyControl: Boolean
     get() = capabilities?.supportsLowLatencyControl == true
+
+val HuaweiDeviceRoute.supportsWearDetection: Boolean
+    get() = capabilities?.supportsWearDetection == true || HuaweiWearDetectionController.supports(this)
 
 val HuaweiDeviceRoute.supportsWindNoiseReduction: Boolean
     get() = capabilities?.supportsWindNoiseReduction == true

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import java.util.concurrent.ConcurrentHashMap
@@ -11,6 +12,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import moe.chenxy.huaweipods.config.ConfigManager
 import moe.chenxy.huaweipods.config.DeviceRoutePrefs
+import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
+import moe.chenxy.huaweipods.utils.miuiStrongToast.data.sendIdentitySharingBroadcast
 
 /**
  * Shared wear-detection protocol used by the models for which a real capture proves 2B10/2B11.
@@ -42,7 +45,8 @@ object HuaweiWearDetectionController {
     private val disabledPacket = hex("5A0006002B10010100B977")
     private val enabledPacket = hex("5A0006002B10010101A956")
 
-    fun supports(route: HuaweiDeviceRoute): Boolean = route in supportedRoutes
+    fun supports(route: HuaweiDeviceRoute): Boolean =
+        route in supportedRoutes || route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC
 
     /** 取消旧代所有延迟回读，避免 Runnable 把旧 ClassLoader 留在主线程队列。 */
     fun closeForHotReload() {
@@ -71,6 +75,16 @@ object HuaweiWearDetectionController {
         enabled: Boolean,
         onComplete: ((Boolean) -> Unit)? = null,
     ) {
+        if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+            context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_SET).apply {
+                putExtra("address", device.address)
+                putExtra(BluetoothDevice.EXTRA_DEVICE, device)
+                putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, route.name)
+                putExtra(HuaweiPodsAction.EXTRA_HUAWEI_WEAR_DETECTION_ENABLED, enabled)
+            })
+            onComplete?.invoke(true)
+            return
+        }
         val packet = setPacket(route, enabled)
         if (packet == null || !isExpectedTarget(context, device, route)) {
             onComplete?.invoke(false)
@@ -117,6 +131,14 @@ object HuaweiWearDetectionController {
         route: HuaweiDeviceRoute,
         onState: (Boolean?) -> Unit,
     ) {
+        if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+            context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_HUAWEI_WEAR_DETECTION_REFRESH).apply {
+                putExtra("address", device.address)
+                putExtra(BluetoothDevice.EXTRA_DEVICE, device)
+                putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, route.name)
+            })
+            return
+        }
         val packet = stateQueryPacket(route)
         if (packet == null || !isExpectedTarget(context, device, route)) {
             onState(null)

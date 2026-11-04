@@ -3,7 +3,10 @@ package moe.chenxy.huaweipods.pods
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import android.content.Intent
 import moe.chenxy.huaweipods.BuildConfig
+import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
+import moe.chenxy.huaweipods.utils.miuiStrongToast.data.sendIdentitySharingBroadcast
 
 /**
  * 低时延写入命令。以下支持范围均来自对应机型抓包中的同一 2B6C/01 开关帧，
@@ -61,6 +64,16 @@ object HuaweiLowLatencyController {
             !BluetoothAdapter.checkBluetoothAddress(address)
         ) {
             onComplete?.invoke(false)
+            return
+        }
+        if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC) {
+            context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_HUAWEI_LOW_LATENCY_SET).apply {
+                putExtra("address", address)
+                putExtra(BluetoothDevice.EXTRA_DEVICE, device)
+                putExtra(HuaweiPodsAction.EXTRA_DEVICE_ROUTE, route.name)
+                putExtra(HuaweiPodsAction.EXTRA_HUAWEI_LOW_LATENCY_ENABLED, enabled)
+            })
+            onComplete?.invoke(true)
             return
         }
         if (usesSharedConnection(context.packageName, route)) {

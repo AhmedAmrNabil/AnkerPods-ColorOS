@@ -22,25 +22,22 @@ internal const val COLOR_OS_WEAR_IN_CASE = 2
 internal const val COLOR_OS_WEAR_UNKNOWN = 255
 
 internal fun colorOsTwsBatteryInfo(battery: BatteryParams): IntArray {
-    val rawLeft = battery.left?.battery ?: 100
-    val leftLevel = if (battery.left?.isConnected == true && rawLeft in 1..100) rawLeft else 100
-    val leftCharge = if (battery.left?.isCharging == true) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+    fun level(pod: PodParams?): Int =
+        pod?.takeIf { it.isConnected }?.battery?.coerceIn(0, 100) ?: COLOR_OS_BATTERY_UNKNOWN
 
-    val rawRight = battery.right?.battery ?: 100
-    val rightLevel = if (battery.right?.isConnected == true && rawRight in 1..100) rawRight else 100
-    val rightCharge = if (battery.right?.isCharging == true) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
-
-    val rawCase = battery.case?.battery ?: 100
-    val caseLevel = if (rawCase in 1..100) rawCase else 100
-    val caseCharge = if (battery.case?.isCharging == true) COLOR_OS_CHARGE_CHARGING else COLOR_OS_CHARGE_NOT_CHARGING
+    fun charge(pod: PodParams?): Int = when {
+        pod == null || !pod.isConnected -> COLOR_OS_CHARGE_DISCONNECTED
+        pod.isCharging -> COLOR_OS_CHARGE_CHARGING
+        else -> COLOR_OS_CHARGE_NOT_CHARGING
+    }
 
     return intArrayOf(
-        leftLevel,
-        rightLevel,
-        caseLevel,
-        leftCharge,
-        rightCharge,
-        caseCharge,
+        level(battery.left),
+        level(battery.right),
+        level(battery.case),
+        charge(battery.left),
+        charge(battery.right),
+        charge(battery.case),
     )
 }
 

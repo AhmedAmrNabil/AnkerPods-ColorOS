@@ -351,7 +351,6 @@ class HuaweiPodsBroadcastTrustPolicyTest {
             )
         }
     }
-    }
 
     @Test
     fun `unknown action is strictly rejected fail-closed`() {

@@ -884,7 +884,6 @@ private val LOW_BATTERY_COLOR = 0xFFFF5252.toInt()
     }
 
     @SuppressLint("MissingPermission")
-<<<<<<< HEAD
     private fun routeFor(context: Context, address: String): HuaweiDeviceRoute? {
         if (!android.bluetooth.BluetoothAdapter.checkBluetoothAddress(address)) return null
         val rawName = runCatching {

@@ -103,6 +103,9 @@ object SoundcoreBackend : EarbudBackend {
                 }
                 HuaweiPodsAction.ACTION_HUAWEI_ANC_LEVEL_SET -> {
                     val level = receivedIntent.getIntExtra("level", -1).takeIf { it >= 0 } ?: return
+                    if (_state.value.ancMode == NoiseControlMode.NOISE_CANCELLATION && !_state.value.isAdaptiveAnc && SoundcoreStateManager.cachedManualAncLevel == level) {
+                        return
+                    }
                     setAncMode(NoiseControlMode.NOISE_CANCELLATION, level, false)
                 }
                 HuaweiPodsAction.ACTION_HUAWEI_ANC_REFRESH -> {
@@ -340,12 +343,7 @@ object SoundcoreBackend : EarbudBackend {
                     ColorOsSystemBatteryBridge.publish(context, device, battery, isReady = true)
                     sendBattery(battery)
                     sendAnc(ancMode, isAdaptive)
-                    val effectiveLevel = if (ancMode == NoiseControlMode.NOISE_CANCELLATION && !isAdaptive) {
-                        ancSubMode ?: SoundcoreStateManager.cachedManualAncLevel
-                    } else {
-                        SoundcoreStateManager.cachedManualAncLevel
-                    }
-                    sendAncLevel(effectiveLevel)
+                    sendAncLevel(SoundcoreStateManager.cachedManualAncLevel)
                     gamingMode?.let {
                         if (activeRoute.supportsLowLatencyControl) {
                             sendLowLatency(it)
@@ -381,7 +379,7 @@ object SoundcoreBackend : EarbudBackend {
             }
             SoundcorePacket.CMD_SOUND_MODES_INBOUND -> {
                 val soundModes = SoundcorePacket.parseSoundModesWithSubMode(packet.body, activeModel)
-                if (packet.body.size > 1) {
+                if (packet.body.size > 1 && soundModes.ancMode == NoiseControlMode.NOISE_CANCELLATION && !soundModes.isAdaptive) {
                     val manual = (packet.body[1].toInt() and 0xF0) shr 4
                     val maxManual = if (activeModel == SoundcoreModel.A3952) 3 else 5
                     if (manual in 1..maxManual) {
@@ -390,22 +388,17 @@ object SoundcoreBackend : EarbudBackend {
                     }
                 }
                 SoundcoreStateManager.ancMode = soundModes.ancMode
-                SoundcoreStateManager.ancSubMode = soundModes.ancSubMode
+                SoundcoreStateManager.ancSubMode = if (soundModes.isAdaptive) soundModes.ancSubMode else SoundcoreStateManager.cachedManualAncLevel
                 SoundcoreStateManager.isAdaptiveAnc = soundModes.isAdaptive
                 _state.update {
                     it.copy(
                         ancMode = soundModes.ancMode,
-                        ancSubMode = soundModes.ancSubMode ?: it.ancSubMode,
+                        ancSubMode = SoundcoreStateManager.cachedManualAncLevel,
                         isAdaptiveAnc = soundModes.isAdaptive,
                     )
                 }
                 sendAnc(soundModes.ancMode, soundModes.isAdaptive)
-                val effectiveLevel = if (soundModes.ancMode == NoiseControlMode.NOISE_CANCELLATION && !soundModes.isAdaptive) {
-                    soundModes.ancSubMode ?: SoundcoreStateManager.cachedManualAncLevel
-                } else {
-                    SoundcoreStateManager.cachedManualAncLevel
-                }
-                sendAncLevel(effectiveLevel)
+                sendAncLevel(SoundcoreStateManager.cachedManualAncLevel)
                 if (SoundcoreStateManager.isReady) {
                     MiuiStrongToastUtil.showPodsNotificationByMiuiBt(context, SoundcoreStateManager.toBatteryParams(), device)
                 }
@@ -446,38 +439,38 @@ object SoundcoreBackend : EarbudBackend {
 
     override fun setAncMode(mode: NoiseControlMode, subMode: Int?, isAdaptive: Boolean) {
         val maxLevel = if (activeModel == SoundcoreModel.A3952) 3 else 5
-        val targetSubMode = subMode ?: if (mode == NoiseControlMode.NOISE_CANCELLATION) {
+        val targetSubMode = if (mode == NoiseControlMode.NOISE_CANCELLATION) {
             if (isAdaptive) {
-                if (activeModel == SoundcoreModel.A3952) 0 else 3
+                subMode ?: (if (activeModel == SoundcoreModel.A3952) 0 else 3)
             } else {
-                SoundcoreStateManager.cachedManualAncLevel.takeIf { it in 1..maxLevel } ?: maxLevel
+                val effLevel = (subMode ?: SoundcoreStateManager.cachedManualAncLevel).coerceIn(1, maxLevel)
+                SoundcoreStateManager.cachedManualAncLevel = effLevel
+                saveCachedManualAncLevel(activeDevice?.address, effLevel)
+                effLevel
             }
         } else null
 
-        if (mode == NoiseControlMode.NOISE_CANCELLATION && !isAdaptive && targetSubMode != null) {
-            SoundcoreStateManager.cachedManualAncLevel = targetSubMode
-            saveCachedManualAncLevel(activeDevice?.address, targetSubMode)
-        }
-
-        val packetBytes = SoundcorePacket.buildSetSoundModesPacket(mode, targetSubMode, isAdaptive, activeModel)
+        val packetBytes = SoundcorePacket.buildSetSoundModesPacket(
+            mode = mode,
+            subMode = targetSubMode,
+            isAdaptive = isAdaptive,
+            model = activeModel,
+            cachedManualLevel = SoundcoreStateManager.cachedManualAncLevel,
+        )
         sendRawPacket(packetBytes)
 
         SoundcoreStateManager.ancMode = mode
-        SoundcoreStateManager.ancSubMode = targetSubMode
+        SoundcoreStateManager.ancSubMode = if (isAdaptive) targetSubMode else SoundcoreStateManager.cachedManualAncLevel
         SoundcoreStateManager.isAdaptiveAnc = isAdaptive
         _state.update {
             it.copy(
                 ancMode = mode,
-                ancSubMode = targetSubMode ?: it.ancSubMode,
+                ancSubMode = SoundcoreStateManager.cachedManualAncLevel,
                 isAdaptiveAnc = isAdaptive,
             )
         }
         sendAnc(mode, isAdaptive)
-        if (targetSubMode != null) {
-            sendAncLevel(targetSubMode)
-        } else {
-            sendAncLevel(SoundcoreStateManager.cachedManualAncLevel)
-        }
+        sendAncLevel(SoundcoreStateManager.cachedManualAncLevel)
 
         if (mode == NoiseControlMode.NOISE_CANCELLATION) {
             sendRequestState(force = true)
@@ -689,11 +682,7 @@ object SoundcoreBackend : EarbudBackend {
     private fun sendAnc(mode: NoiseControlMode, isAdaptiveOverride: Boolean? = null) {
         val ctx = appContext ?: return
         val isAdaptive = isAdaptiveOverride ?: _state.value.isAdaptiveAnc
-        val subMode = if (mode == NoiseControlMode.NOISE_CANCELLATION && isAdaptive) {
-            _state.value.ancSubMode
-        } else {
-            SoundcoreStateManager.cachedManualAncLevel
-        }
+        val subMode = SoundcoreStateManager.cachedManualAncLevel
         activeDevice?.let { ColorOsSystemBatteryBridge.setLatestAnc(it.address, mode, isAdaptive) }
         sendAppBroadcast(ctx, HuaweiPodsAction.ACTION_PODS_ANC_CHANGED) {
             putExtra("status", mode.broadcastStatus)

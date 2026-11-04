@@ -83,19 +83,19 @@ object SoundcoreStateManager {
                         2 -> NoiseControlMode.OFF
                         else -> NoiseControlMode.UNKNOWN
                     }
-                    if (body.size > 122) {
-                        val manual = (body[122].toInt() and 0xF0) shr 4
-                        if (manual in 1..3) {
-                            cachedManualAncLevel = manual
-                        }
-                    }
                     if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 124) {
                         val ncMode = body[124].toInt() and 0xFF
                         if (ncMode == 0) {
+                            if (body.size > 122) {
+                                val manual = (body[122].toInt() and 0xF0) shr 4
+                                if (manual in 1..3) {
+                                    cachedManualAncLevel = manual
+                                }
+                            }
                             ancSubMode = cachedManualAncLevel
                             isAdaptiveAnc = false
                         } else {
-                            val adaptive = body[122].toInt() and 0x0F
+                            val adaptive = if (body.size > 122) body[122].toInt() and 0x0F else 0
                             ancSubMode = if (adaptive in 0..2) adaptive else 0
                             isAdaptiveAnc = true
                         }
@@ -123,19 +123,19 @@ object SoundcoreStateManager {
                         2 -> NoiseControlMode.OFF
                         else -> NoiseControlMode.UNKNOWN
                     }
-                    if (body.size > 127) {
-                        val manual = (body[127].toInt() and 0xF0) shr 4
-                        if (manual in 1..5) {
-                            cachedManualAncLevel = manual
-                        }
-                    }
                     if (ancMode == NoiseControlMode.NOISE_CANCELLATION && body.size > 129) {
                         val ncMode = body[129].toInt() and 0xFF
                         if (ncMode == 0) {
+                            if (body.size > 127) {
+                                val manual = (body[127].toInt() and 0xF0) shr 4
+                                if (manual in 1..5) {
+                                    cachedManualAncLevel = manual
+                                }
+                            }
                             ancSubMode = cachedManualAncLevel
                             isAdaptiveAnc = false
                         } else {
-                            val adaptive = body[127].toInt() and 0x0F
+                            val adaptive = if (body.size > 127) body[127].toInt() and 0x0F else 3
                             ancSubMode = if (adaptive in 1..5) adaptive else 3
                             isAdaptiveAnc = true
                         }
@@ -157,10 +157,12 @@ object SoundcoreStateManager {
             }
         }
 
-        android.util.Log.i(
-            "SoundcoreState",
-            "updateFromStateUpdate ($effectiveModel): rawL=$rawL rawR=$rawR rawCase=$rawCase caseChg=$caseChg ancMode=$ancMode wear=$wearDetection bodyLen=${body.size}"
-        )
+        runCatching {
+            android.util.Log.i(
+                "SoundcoreState",
+                "updateFromStateUpdate ($effectiveModel): rawL=$rawL rawR=$rawR rawCase=$rawCase caseChg=$caseChg ancMode=$ancMode wear=$wearDetection bodyLen=${body.size}"
+            )
+        }
 
         return processBatteryReading(rawL, rawR, rawCase, leftChg, rightChg, caseChg)
     }
@@ -237,10 +239,12 @@ object SoundcoreStateManager {
         }
 
         val isOutOfCase = (rawCase == 255 || rawCase > 100)
-        android.util.Log.i(
-            "SoundcoreState",
-            "processBatteryReading result: rawCase=$rawCase isOutOfCase=$isOutOfCase L_chg=$isLeftCharging R_chg=$isRightCharging Case_chg=$isCaseCharging"
-        )
+        runCatching {
+            android.util.Log.i(
+                "SoundcoreState",
+                "processBatteryReading result: rawCase=$rawCase isOutOfCase=$isOutOfCase L_chg=$isLeftCharging R_chg=$isRightCharging Case_chg=$isCaseCharging"
+            )
+        }
 
         return true
     }

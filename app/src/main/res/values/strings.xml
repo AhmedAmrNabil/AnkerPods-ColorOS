@@ -4,6 +4,7 @@
     <string name="app_subtitle">Independent Huawei earphone adaptation for ColorOS</string>
     <string name="coloros_live_alert_channel">Earphones live alert</string>
     <string name="coloros_live_alert_fallback_title">Huawei earphones</string>
+    <string name="coloros_live_alert_cycle_anc">Cycle noise control</string>
     <string name="coloros_live_alert_low_latency_on">Turn on low latency</string>
     <string name="coloros_live_alert_low_latency_off">Turn off low latency</string>
     <string name="coloros_live_alert_low_latency_state_on">Low latency on</string>

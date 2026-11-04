@@ -5,6 +5,7 @@ import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.PodParams
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -167,6 +168,17 @@ class SoundcorePacketTest {
         assertEquals(0x00, adaptivePacket5[9].toInt() and 0xFF)
         assertEquals(0x55, adaptivePacket5[10].toInt() and 0xFF) // (5 << 4) | 5
         assertEquals(0x01, adaptivePacket5[12].toInt() and 0xFF) // nc_mode: Adaptive
+
+        // Adaptive level with cached manual level 2 preserves manual level in high nibble
+        val adaptiveWithCachedManual = SoundcorePacket.buildSetSoundModesPacket(
+            mode = NoiseControlMode.NOISE_CANCELLATION,
+            subMode = 3,
+            isAdaptive = true,
+            model = SoundcoreModel.A3947,
+            cachedManualLevel = 2,
+        )
+        assertEquals(0x23, adaptiveWithCachedManual[10].toInt() and 0xFF) // (2 << 4) | 3
+        assertEquals(0x01, adaptiveWithCachedManual[12].toInt() and 0xFF) // nc_mode: Adaptive
     }
 
     @Test
@@ -264,5 +276,38 @@ class SoundcorePacketTest {
         )
         assertEquals(16, normalPacket.size)
         assertEquals(0x02, normalPacket[9].toInt() and 0xFF) // Normal (OFF)
+    }
+
+    @Test
+    fun testCachedManualAncLevelOnlyUpdatedInManualMode() {
+        SoundcoreStateManager.cachedManualAncLevel = 2
+
+        // A3947 body in Adaptive mode (offset 126: 0=ANC, offset 127: 0x53, offset 129: 1=Adaptive)
+        val adaptiveBody = ByteArray(160) { 0 }
+        adaptiveBody[2] = 5 // Left battery
+        adaptiveBody[3] = 5 // Right battery
+        adaptiveBody[126] = 0 // ANC
+        adaptiveBody[127] = 0x53.toByte() // high nibble=5, low nibble=3
+        adaptiveBody[129] = 1 // ncMode = Adaptive
+
+        val success1 = SoundcoreStateManager.updateFromStateUpdate(adaptiveBody, SoundcoreModel.A3947)
+        assertTrue(success1)
+        assertTrue(SoundcoreStateManager.isAdaptiveAnc)
+        // Cached manual level MUST NOT be updated when in Adaptive mode
+        assertEquals(2, SoundcoreStateManager.cachedManualAncLevel)
+
+        // A3947 body in Manual mode (offset 126: 0=ANC, offset 127: 0x40, offset 129: 0=Manual)
+        val manualBody = ByteArray(160) { 0 }
+        manualBody[2] = 5
+        manualBody[3] = 5
+        manualBody[126] = 0 // ANC
+        manualBody[127] = 0x40.toByte() // high nibble=4, low nibble=0
+        manualBody[129] = 0 // ncMode = Manual
+
+        val success2 = SoundcoreStateManager.updateFromStateUpdate(manualBody, SoundcoreModel.A3947)
+        assertTrue(success2)
+        assertFalse(SoundcoreStateManager.isAdaptiveAnc)
+        // Cached manual level MUST be updated when in Manual mode
+        assertEquals(4, SoundcoreStateManager.cachedManualAncLevel)
     }
 }

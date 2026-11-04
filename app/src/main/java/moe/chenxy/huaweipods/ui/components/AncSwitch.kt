@@ -289,7 +289,6 @@ private fun SoundcoreNoiseControlSection(
                 selected = isCancellingSelected,
                 onClick = {
                     onModeSelect(NoiseControlMode.NOISE_CANCELLATION, false, savedManualLevel)
-                    onHuaweiAncLevelChange?.invoke(savedManualLevel)
                 },
                 compact = compact,
                 modifier = Modifier.weight(1f),
@@ -443,7 +442,7 @@ private fun AncRoundButton(
         Text(
             text = label,
             fontSize = if (compact) 10.sp else 11.sp,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            fontWeight = FontWeight.Normal,
             color = if (selected) Color.White else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.55f),
             textAlign = TextAlign.Center,
             maxLines = 2,
@@ -525,7 +524,7 @@ private fun HuaweiAncChoice(
         Text(
             text = label,
             fontSize = if (compact) 12.sp else 14.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            fontWeight = FontWeight.Normal,
             color = if (selected) Color.White else MiuixTheme.colorScheme.onBackground,
         )
     }

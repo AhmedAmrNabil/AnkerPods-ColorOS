@@ -89,22 +89,24 @@ object SoundcorePacket {
         subMode: Int? = null,
         isAdaptive: Boolean = false,
         model: SoundcoreModel = SoundcoreModel.A3947,
+        cachedManualLevel: Int? = null,
     ): ByteArray {
         val body = when (model) {
             SoundcoreModel.A3952 -> when (mode) {
                 NoiseControlMode.NOISE_CANCELLATION -> {
                     if (isAdaptive) {
                         val adaptiveLevel = if (subMode != null && subMode in 0..2) subMode else 0
+                        val manualLevel = (cachedManualLevel ?: 3).coerceIn(1, 3)
                         byteArrayOf(
                             0x00,
-                            ((0x3 shl 4) or adaptiveLevel).toByte(),
+                            ((manualLevel shl 4) or adaptiveLevel).toByte(),
                             0x00,
                             0x01, // Adaptive (nc_mode = 1)
                             0x01,
                             0x00
                         )
                     } else {
-                        val manualLevel = if (subMode != null && subMode in 1..3) subMode else 3
+                        val manualLevel = if (subMode != null && subMode in 1..3) subMode else (cachedManualLevel ?: 3).coerceIn(1, 3)
                         byteArrayOf(
                             0x00,
                             ((manualLevel shl 4) or 0x00).toByte(),
@@ -126,9 +128,10 @@ object SoundcorePacket {
                 NoiseControlMode.NOISE_CANCELLATION -> {
                     if (isAdaptive) {
                         val adaptiveLevel = if (subMode != null && subMode in 1..5) subMode else 3
+                        val manualLevel = (cachedManualLevel ?: 5).coerceIn(1, 5)
                         byteArrayOf(
                             0x00,
-                            ((0x5 shl 4) or adaptiveLevel).toByte(),
+                            ((manualLevel shl 4) or adaptiveLevel).toByte(),
                             0x01,
                             0x01, // Adaptive (nc_mode = 1)
                             0x01,
@@ -136,8 +139,8 @@ object SoundcorePacket {
                             0x00
                         )
                     } else {
-                        // Manual noise cancelling (defaults to level 5)
-                        val manualLevel = if (subMode != null && subMode in 1..5) subMode else 5
+                        // Manual noise cancelling
+                        val manualLevel = if (subMode != null && subMode in 1..5) subMode else (cachedManualLevel ?: 5).coerceIn(1, 5)
                         byteArrayOf(
                             0x00,
                             ((manualLevel shl 4) or 0x00).toByte(),

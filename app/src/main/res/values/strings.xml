@@ -125,7 +125,7 @@
     <string name="soundcore_anc_manual_level">Manual level</string>
     <string name="soundcore_anc_level">Level %1$d</string>
     <string name="anc_mode_off">Off</string>
-    <string name="anc_mode_cancelling">Noise cancelling</string>
+    <string name="anc_mode_cancelling">Noise cancellation</string>
     <string name="anc_mode_transparency">Transparency</string>
     <string name="anc_mode_adaptive">Adaptive</string>
     <string name="anc_level_adaptive">Adaptive</string>

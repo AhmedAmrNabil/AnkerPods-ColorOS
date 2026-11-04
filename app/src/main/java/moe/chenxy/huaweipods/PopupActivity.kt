@@ -249,7 +249,7 @@ private fun PopupContent(
                             ?.let { subMode ->
                                 when (reportedMode) {
                                     NoiseControlMode.NOISE_CANCELLATION ->
-                                        if (target.route.supportsAncSubMode(subMode)) {
+                                        if (!isAdaptiveAnc.value && target.route.supportsAncSubMode(subMode)) {
                                             ancLevel.value = subMode
                                             hasAncLevel.value = true
                                         }
@@ -395,7 +395,7 @@ private fun PopupContent(
                     NoiseControlMode.NOISE_CANCELLATION ->
                         if (route.supportsSoundcoreAnc) {
                             if (isAdaptive) {
-                                if (route == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 0 else 3
+                                null
                             } else {
                                 ancLevel.value.takeIf {
                                     hasAncLevel.value && route.supportsAncSubMode(it)

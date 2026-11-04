@@ -164,6 +164,9 @@ object ColorOsMyDevicesHook : HookContext() {
         runCatching { hookAirpodsFragment() }
             .onSuccess { Log.i(TAG, "AirpodsFragment hook installed") }
             .onFailure { Log.w(TAG, "AirpodsFragment hook failed", it) }
+        runCatching { hookBlueToothDetailActivity() }
+            .onSuccess { Log.i(TAG, "BlueToothDetailActivity hook installed") }
+            .onFailure { Log.w(TAG, "BlueToothDetailActivity hook failed", it) }
         runCatching { hookAirpodsSettingActivity() }
             .onSuccess { Log.i(TAG, "AirpodsSettingActivity hook installed") }
             .onFailure { Log.w(TAG, "AirpodsSettingActivity hook failed", it) }
@@ -499,11 +502,22 @@ object ColorOsMyDevicesHook : HookContext() {
                 "IMG_soundcore_liberty_4_nc.webp",
                 "IMG_airpods_pro_a2dp_homepage.webp",
                 "IMG_airpods_a2dp_homepage.webp",
-                "IMG_airpods_pro_pairing_capsule.webp",
-                "IMG_airpods_pairing_capsule.webp",
                 "IMG_bt_a2dp_homepage.webp",
                 "IMG_bt_headset_homepage_gradient.webp",
             )
+
+            // Remove any corrupted capsule files left by older versions so HeyTap can
+            // extract its native animated capsule webp asset instead.
+            listOf(
+                "IMG_airpods_pro_pairing_capsule.webp",
+                "IMG_airpods_pairing_capsule.webp",
+                "IMG_airpods_headset_homepage_gradient_capsule.webp",
+            ).forEach { fn ->
+                val f = File(dir, fn)
+                if (f.exists()) {
+                    runCatching { f.delete() }
+                }
+            }
 
             val moduleRes = ModuleResourceResolver.resources(context)
             val resId = moduleRes?.runCatching {
@@ -602,21 +616,6 @@ object ColorOsMyDevicesHook : HookContext() {
                 }
             }
         }.onFailure { Log.w(TAG, "IconHandler.a hook unavailable", it) }
-
-        runCatching {
-            val methodB = cls.getDeclaredMethod("b", Int::class.javaPrimitiveType!!, Boolean::class.javaPrimitiveType!!)
-            hookBefore(methodB) {
-                if (hasActiveSupportedDevice()) {
-                    val context = runCatching {
-                        cls.getDeclaredField("a").apply { isAccessible = true }.get(instance) as? Context
-                    }.getOrNull() ?: currentApplicationOrNull() ?: statusReceiverContext
-                    if (context != null) {
-                        val uri = ensureSoundcoreImageCached(context)
-                        if (uri != null) result = uri.toString()
-                    }
-                }
-            }
-        }.onFailure { Log.w(TAG, "IconHandler.b hook unavailable", it) }
     }
 
     private fun hookBlueToothScannerImpl() {
@@ -753,6 +752,10 @@ object ColorOsMyDevicesHook : HookContext() {
             val devObj = args.lastOrNull() ?: return@hookAfter
             val addr = runCatching { callMethod(devObj, "getMacAddress") as? String }.getOrNull()
             if (isSupportedAddress(addr)) {
+                val ctx = (runCatching { callMethod(instance, "getContext") as? Context }.getOrNull()) ?: statusReceiverContext
+                if (ctx != null) {
+                    requestCurrentStatus(ctx)
+                }
                 cardInfo.javaClass.declaredFields.forEach { field ->
                     field.isAccessible = true
                     if (field.type == Boolean::class.javaPrimitiveType && field.name == "b") {
@@ -760,8 +763,11 @@ object ColorOsMyDevicesHook : HookContext() {
                     }
                     if (field.type == String::class.java && field.name == "h") {
                         val curIcon = field.get(cardInfo) as? String
-                        if (curIcon != null && curIcon.contains("HEADSET")) {
-                            field.set(cardInfo, curIcon.replace("HEADSET", "LR"))
+                        if (curIcon != null) {
+                            val newIcon = curIcon
+                                .replace("BT-DEVICE-HEADSET", "HEADSET_TWS")
+                                .replace("BT_DEVICE_HEADSET", "HEADSET_TWS")
+                            field.set(cardInfo, newIcon)
                         }
                     }
                 }
@@ -782,6 +788,8 @@ object ColorOsMyDevicesHook : HookContext() {
                     val macField = runCatching { fragCls.getDeclaredField("mMac").apply { isAccessible = true } }.getOrNull()
                     val mac = macField?.get(instance) as? String
                     if (mac != null && !isSupportedAddress(mac)) return@hookAfter
+
+                    requestCurrentStatus(root.context)
 
                     val airpodsImageId = root.resources.getIdentifier("airpods_image", "id", root.context.packageName)
                     val imgView = (if (airpodsImageId != 0) root.findViewById(airpodsImageId) else null)
@@ -829,6 +837,7 @@ object ColorOsMyDevicesHook : HookContext() {
                         val binding = bindingField.get(instance) ?: return@hookAfter
                         val nField = runCatching { binding.javaClass.getDeclaredField("n").apply { isAccessible = true } }.getOrNull()
                         val imgView = nField?.get(binding) as? ImageView ?: return@hookAfter
+                        requestCurrentStatus(imgView.context)
                         val target = getSoundcoreDrawable(imgView.context) ?: return@hookAfter
                         imgView.background = null
                         imgView.setImageDrawable(target)
@@ -982,6 +991,7 @@ object ColorOsMyDevicesHook : HookContext() {
         runCatching {
             val onResumeMethod = actCls.getDeclaredMethod("onResume")
             hookAfter(onResumeMethod) {
+                (instance as? Activity)?.let { requestCurrentStatus(it) }
                 applySettingImage(instance)
                 val p1Method = runCatching { actCls.getDeclaredMethod("p1").apply { isAccessible = true } }.getOrNull()
                 val imgView = p1Method?.invoke(instance) as? ImageView
@@ -1000,6 +1010,20 @@ object ColorOsMyDevicesHook : HookContext() {
                 }
             }
         }.onFailure { Log.w(TAG, "AirpodsSettingActivity.onResume hook unavailable", it) }
+    }
+
+    private fun hookBlueToothDetailActivity() {
+        val actCls = runCatching {
+            findClass("com.oplus.mydevices.bluetooth.BlueToothDetailActivity")
+        }.getOrNull() ?: return
+
+        runCatching {
+            val onResumeMethod = actCls.getDeclaredMethod("onResume")
+            hookAfter(onResumeMethod) {
+                val act = instance as? Activity ?: return@hookAfter
+                requestCurrentStatus(act)
+            }
+        }.onFailure { Log.w(TAG, "BlueToothDetailActivity.onResume hook unavailable", it) }
     }
 
     override fun onClose() {
@@ -1526,7 +1550,16 @@ object ColorOsMyDevicesHook : HookContext() {
         }
     }
 
-    private fun requestCurrentStatus(context: Context) {
+    private var lastStatusRequestTime = 0L
+
+    private fun requestCurrentStatus(context: Context, force: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastStatusRequestTime < 1500L) {
+            Log.d(TAG, "requestCurrentStatus throttled (${now - lastStatusRequestTime}ms < 1500ms)")
+            return
+        }
+        lastStatusRequestTime = now
+        Log.i(TAG, "requestCurrentStatus sending ACTION_REFRESH_STATUS from ${context.javaClass.simpleName}")
         runCatching {
             // 蓝牙进程按 sentFromPackage 校验控制广播，必须共享发送方身份。
             context.sendIdentitySharingBroadcast(Intent(HuaweiPodsAction.ACTION_REFRESH_STATUS).apply {

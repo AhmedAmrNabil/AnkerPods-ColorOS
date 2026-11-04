@@ -104,12 +104,14 @@ object SoundcoreBackend : EarbudBackend {
                     } else {
                         SoundcoreStateManager.cachedManualAncLevel
                     }
+                    Log.i(TAG, "Incoming action ACTION_ANC_SELECT: status=$status, mode=$mode, adaptive=$isAdaptive, subMode=$subMode")
                     if (mode != NoiseControlMode.UNKNOWN) {
                         setAncMode(mode, subMode, isAdaptive)
                     }
                 }
                 HuaweiPodsAction.ACTION_HUAWEI_ANC_LEVEL_SET -> {
                     val level = receivedIntent.getIntExtra("level", -1).takeIf { it >= 0 } ?: return
+                    Log.i(TAG, "Incoming action ACTION_HUAWEI_ANC_LEVEL_SET: level=$level")
                     if (_state.value.ancMode == NoiseControlMode.NOISE_CANCELLATION && !_state.value.isAdaptiveAnc && SoundcoreStateManager.cachedManualAncLevel == level) {
                         return
                     }
@@ -405,6 +407,8 @@ object SoundcoreBackend : EarbudBackend {
                 pendingAncMode = null
                 pendingIsAdaptive = null
                 val soundModes = SoundcorePacket.parseSoundModesWithSubMode(packet.body, activeModel)
+                val hexBody = packet.body.joinToString(" ") { "%02X".format(it) }
+                Log.i(TAG, "<<< RECEIVED CONFIRMATION [SoundModes]: mode=${soundModes.ancMode}, adaptive=${soundModes.isAdaptive}, subMode=${soundModes.ancSubMode} | body=[$hexBody]")
                 if (packet.body.size > 1 && soundModes.ancMode == NoiseControlMode.NOISE_CANCELLATION && !soundModes.isAdaptive) {
                     val manual = (packet.body[1].toInt() and 0xF0) shr 4
                     val maxManual = if (activeModel == SoundcoreModel.A3952) 3 else 5
@@ -486,6 +490,8 @@ object SoundcoreBackend : EarbudBackend {
             model = activeModel,
             cachedManualLevel = SoundcoreStateManager.cachedManualAncLevel,
         )
+        val hexBytes = packetBytes.joinToString(" ") { "%02X".format(it) }
+        Log.i(TAG, ">>> SENDING CONTROL [SetSoundModes]: mode=$mode, adaptive=$isAdaptive, targetSubMode=$targetSubMode (cachedManual=${SoundcoreStateManager.cachedManualAncLevel}) | bytes=[$hexBytes]")
         lastSetSoundModesTime = SystemClock.elapsedRealtime()
         pendingAncMode = mode
         pendingIsAdaptive = isAdaptive
@@ -529,6 +535,8 @@ object SoundcoreBackend : EarbudBackend {
             return
         }
         val packet = SoundcorePacket.buildSetGamingModePacket(enabled)
+        val hexBytes = packet.joinToString(" ") { "%02X".format(it) }
+        Log.i(TAG, ">>> SENDING CONTROL [SetGamingMode]: enabled=$enabled | bytes=[$hexBytes]")
         val success = sendRawPacket(packet)
         SoundcoreStateManager.gamingMode = enabled
         sendLowLatency(enabled, writeSuccess = success)
@@ -543,6 +551,8 @@ object SoundcoreBackend : EarbudBackend {
 
     fun setWearingDetection(enabled: Boolean) {
         val packet = SoundcorePacket.buildSetWearingDetectionPacket(enabled)
+        val hexBytes = packet.joinToString(" ") { "%02X".format(it) }
+        Log.i(TAG, ">>> SENDING CONTROL [SetWearingDetection]: enabled=$enabled | bytes=[$hexBytes]")
         val success = sendRawPacket(packet)
         SoundcoreStateManager.wearDetection = enabled
         sendWearDetection(enabled, writeSuccess = success)
@@ -583,8 +593,9 @@ object SoundcoreBackend : EarbudBackend {
             return
         }
         lastRequestStateTime = now
-        Log.i(TAG, "sendRequestState: polling earbud state over RFCOMM")
         val packetBytes = SoundcorePacket.buildRequestStatePacket()
+        val hexBytes = packetBytes.joinToString(" ") { "%02X".format(it) }
+        Log.i(TAG, ">>> SENDING CONTROL [RequestState]: force=$force | bytes=[$hexBytes]")
         sendRawPacket(packetBytes)
     }
 

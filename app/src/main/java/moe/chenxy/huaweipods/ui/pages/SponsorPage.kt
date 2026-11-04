@@ -53,7 +53,7 @@ fun SponsorPage(
         item {
             Card {
                 Image(
-                    painter = painterResource(R.drawable.sponsor_qr_piter),
+                    painter = painterResource(R.drawable.sponsor_qr),
                     contentDescription = stringResource(R.string.sponsor_qr_description),
                     contentScale = ContentScale.Fit,
                     modifier = Modifier

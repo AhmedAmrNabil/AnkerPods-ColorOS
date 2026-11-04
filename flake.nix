@@ -91,6 +91,7 @@
               androidSdk
               pkgs.jadx
               pkgs.git
+			  pkgs.unzip
             ];
             ANDROID_HOME = sdk;
             ANDROID_SDK_ROOT = sdk;

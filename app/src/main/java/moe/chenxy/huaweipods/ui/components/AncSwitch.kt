@@ -11,6 +11,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -65,6 +66,7 @@ import top.yukonga.miuix.kmp.basic.RadioButtonDefaults
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.preference.RadioButtonPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.SinkFeedback
 import top.yukonga.miuix.kmp.utils.pressable
@@ -448,124 +450,38 @@ private fun SoundcoreNoiseControlSection(
                 }
             } else if (isTransparencySelected) {
                 var transMode by remember { mutableStateOf(SoundcoreStateManager.transparencyMode) }
-                val pillBg = MiuixTheme.colorScheme.secondary
-                val primaryColor = MiuixTheme.colorScheme.primary
-                val transVerticalPadding = if (!showTitle) 8.dp else 14.dp
-                val checkSlotSize = 18.dp
+                val isFull = transMode == 0
+                val isVocal = transMode == 1
 
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(
-                            top = transVerticalPadding,
-                            bottom = transVerticalPadding,
-                        ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .padding(vertical = if (!showTitle) 2.dp else 4.dp),
                 ) {
-                    Text(
-                        text = stringResource(R.string.soundcore_transparency_mode),
-                        color = MiuixTheme.colorScheme.onSurface,
-                        style = MiuixTheme.textStyles.headline1,
-                        modifier = Modifier.padding(horizontal = horizontalPadding),
+                    RadioButtonPreference(
+                        title = stringResource(R.string.soundcore_transparency_full),
+                        selected = isFull,
+                        insideMargin = PaddingValues(
+                            horizontal = horizontalPadding,
+                            vertical = if (compact) 8.dp else 12.dp,
+                        ),
+                        onClick = {
+                            transMode = 0
+                            SoundcoreBackend.setTransparencyMode(0)
+                        },
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = horizontalPadding),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Option 0: Full Transparent
-                        val isFull = transMode == 0
-                        val interaction0 = remember { MutableInteractionSource() }
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(pillBg)
-                                .pressable(interactionSource = interaction0, indication = SinkFeedback())
-                                .clickable(
-                                    interactionSource = interaction0,
-                                    indication = null,
-                                    role = Role.RadioButton,
-                                ) {
-                                    transMode = 0
-                                    SoundcoreBackend.setTransparencyMode(0)
-                                }
-                                .padding(start = 10.dp, end = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Start,
-                        ) {
-                            Box(
-                                modifier = Modifier.size(checkSlotSize),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                RadioButton(
-                                    selected = isFull,
-                                    onClick = null,
-                                    modifier = Modifier.scale(0.7f),
-                                    colors = RadioButtonDefaults.radioButtonColors(
-                                        selectedColor = primaryColor,
-                                    ),
-                                )
-                            }
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.soundcore_transparency_full),
-                                color = if (isFull) primaryColor else MiuixTheme.colorScheme.onSurface,
-                                fontSize = 13.sp,
-                                fontWeight = if (isFull) FontWeight.Medium else FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        // Option 1: Vocal Mode
-                        val isVocal = transMode == 1
-                        val interaction1 = remember { MutableInteractionSource() }
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(pillBg)
-                                .pressable(interactionSource = interaction1, indication = SinkFeedback())
-                                .clickable(
-                                    interactionSource = interaction1,
-                                    indication = null,
-                                    role = Role.RadioButton,
-                                ) {
-                                    transMode = 1
-                                    SoundcoreBackend.setTransparencyMode(1)
-                                }
-                                .padding(start = 10.dp, end = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Start,
-                        ) {
-                            Box(
-                                modifier = Modifier.size(checkSlotSize),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                RadioButton(
-                                    selected = isVocal,
-                                    onClick = null,
-                                    modifier = Modifier.scale(0.7f),
-                                    colors = RadioButtonDefaults.radioButtonColors(
-                                        selectedColor = primaryColor,
-                                    ),
-                                )
-                            }
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.soundcore_transparency_vocal),
-                                color = if (isVocal) primaryColor else MiuixTheme.colorScheme.onSurface,
-                                fontSize = 13.sp,
-                                fontWeight = if (isVocal) FontWeight.Medium else FontWeight.Normal,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
+                    RadioButtonPreference(
+                        title = stringResource(R.string.soundcore_transparency_vocal),
+                        selected = isVocal,
+                        insideMargin = PaddingValues(
+                            horizontal = horizontalPadding,
+                            vertical = if (compact) 8.dp else 12.dp,
+                        ),
+                        onClick = {
+                            transMode = 1
+                            SoundcoreBackend.setTransparencyMode(1)
+                        },
+                    )
                 }
             }
         }

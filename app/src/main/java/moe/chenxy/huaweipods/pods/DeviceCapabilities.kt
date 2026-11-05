@@ -39,6 +39,8 @@ data class HuaweiDeviceCapabilities(
     val supportsWearDetection: Boolean = false,
     val supportsWindNoiseReduction: Boolean = false,
     val supportsSoundcoreAnc: Boolean = false,
+    val supportsSurroundSound: Boolean = false,
+    val supportsLdac: Boolean = false,
     val hasChargingCase: Boolean = false,
     val usesReportedEarbudAvailability: Boolean = false,
 )
@@ -232,6 +234,9 @@ private val routeCapabilities = linkedMapOf(
         supportsSoundcoreAnc = true,
         supportsLowLatencyControl = true,
         supportsWearDetection = true,
+        supportsWindNoiseReduction = true,
+        supportsSurroundSound = true,
+        supportsLdac = true,
         hasChargingCase = true,
     ),
     HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO to HuaweiDeviceCapabilities(
@@ -331,6 +336,12 @@ val HuaweiDeviceRoute.supportsWindNoiseReduction: Boolean
 
 val HuaweiDeviceRoute.supportsSoundcoreAnc: Boolean
     get() = capabilities?.supportsSoundcoreAnc == true
+
+val HuaweiDeviceRoute.supportsSurroundSound: Boolean
+    get() = capabilities?.supportsSurroundSound == true
+
+val HuaweiDeviceRoute.supportsLdac: Boolean
+    get() = capabilities?.supportsLdac == true
 
 val HuaweiDeviceRoute.hasChargingCase: Boolean
     get() = capabilities?.hasChargingCase == true

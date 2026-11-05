@@ -31,7 +31,7 @@ import moe.chenxy.huaweipods.R
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.HuaweiWindNoiseReductionController
 import moe.chenxy.huaweipods.pods.supportsWindNoiseReduction
-import top.yukonga.miuix.kmp.basic.Checkbox
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -92,14 +92,10 @@ fun WindNoiseReductionControl(address: String, route: HuaweiDeviceRoute) {
             )
         }
         Spacer(Modifier.width(12.dp))
-        Checkbox(
-            state = when (enabled) {
-                true -> ToggleableState.On
-                false -> ToggleableState.Off
-                null -> ToggleableState.Indeterminate
-            },
+        Switch(
+            checked = enabled == true,
             enabled = !pending && device != null,
-            onClick = toggle,
+            onCheckedChange = { toggle() },
         )
     }
 }

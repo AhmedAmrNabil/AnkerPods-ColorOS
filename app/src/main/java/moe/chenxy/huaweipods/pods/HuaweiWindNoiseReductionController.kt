@@ -19,6 +19,10 @@ object HuaweiWindNoiseReductionController {
             onState(null)
             return
         }
+        if (route.isSoundcore) {
+            onState(moe.chenxy.huaweipods.backend.soundcore.SoundcoreStateManager.windNoiseReduction)
+            return
+        }
         if (HuaweiSharedControlClient.usesSharedConnection(context, route)) {
             HuaweiSharedControlClient.request(context, device, route, HuaweiSharedControlPolicy.WIND_READ) {
                 onState(it?.let(::parseState))
@@ -48,6 +52,12 @@ object HuaweiWindNoiseReductionController {
     ) {
         if (!route.supportsWindNoiseReduction) {
             onComplete(false)
+            return
+        }
+        if (route.isSoundcore) {
+            moe.chenxy.huaweipods.backend.soundcore.SoundcoreBackend.setWindNoiseReduction(enabled)
+            onState(enabled)
+            onComplete(true)
             return
         }
         if (HuaweiSharedControlClient.usesSharedConnection(context, route)) {

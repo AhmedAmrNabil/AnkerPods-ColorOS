@@ -276,4 +276,13 @@
     <string name="onboarding_ready_group">For help or feedback, open an issue on GitHub: ByteJuno/HuaweiPods-ColorOS</string>
     <string name="huawei_equalizer_title">Custom equalizer</string>
     <string name="huawei_equalizer_summary">Reads the current earphone curve before editing</string>
+    <string name="soundcore_surround_sound">3D surround sound</string>
+    <string name="soundcore_surround_sound_summary">Virtual 3D audio experience</string>
+    <string name="soundcore_environment_detection">Environment detection</string>
+    <string name="soundcore_environment_detection_summary">Turn off audio for 2s to detect environment then resume playing</string>
+    <string name="soundcore_transparency_mode">Transparency mode</string>
+    <string name="soundcore_transparency_full">Full transparent</string>
+    <string name="soundcore_transparency_vocal">Vocal mode</string>
+    <string name="soundcore_ldac">LDAC</string>
+    <string name="soundcore_ldac_summary">High-resolution audio streaming. May increase power consumption.</string>
 </resources>

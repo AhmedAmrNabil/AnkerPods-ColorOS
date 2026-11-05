@@ -68,6 +68,8 @@ import moe.chenxy.huaweipods.ui.components.FreeArcControls
 import moe.chenxy.huaweipods.ui.components.HuaweiGestureControls
 import moe.chenxy.huaweipods.ui.components.LowLatencyControl
 import moe.chenxy.huaweipods.ui.components.PodStatus
+import moe.chenxy.huaweipods.ui.components.SurroundSoundControl
+import moe.chenxy.huaweipods.ui.components.LdacControl
 import moe.chenxy.huaweipods.ui.components.WearDetectionControl
 import moe.chenxy.huaweipods.ui.components.WindNoiseReductionControl
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
@@ -83,6 +85,8 @@ import moe.chenxy.huaweipods.pods.supportsDiscreteAncLevels
 import moe.chenxy.huaweipods.pods.supportsGestureConfiguration
 import moe.chenxy.huaweipods.pods.supportsLowLatencyControl
 import moe.chenxy.huaweipods.pods.supportsSoundcoreAnc
+import moe.chenxy.huaweipods.pods.supportsSurroundSound
+import moe.chenxy.huaweipods.pods.supportsLdac
 import moe.chenxy.huaweipods.pods.supportsTransparency
 import moe.chenxy.huaweipods.pods.supportsWearDetection
 import moe.chenxy.huaweipods.pods.supportsWindNoiseReduction
@@ -336,7 +340,7 @@ private fun LazyListScope.podControlItems(
                         onHuaweiAncLevelChange = onHuaweiAncLevelChange,
                         deviceRoute = deviceRoute,
                     )
-                    if (deviceRoute.supportsWindNoiseReduction) {
+                    if (deviceRoute.supportsWindNoiseReduction && ancMode != NoiseControlMode.OFF) {
                         WindNoiseReductionControl(
                             address = connectedDeviceAddress,
                             route = deviceRoute,
@@ -484,6 +488,32 @@ private fun LazyListScope.podControlItems(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
             ) {
                 WearDetectionControl(
+                    address = connectedDeviceAddress,
+                    route = deviceRoute,
+                )
+            }
+        }
+    }
+
+    if (deviceRoute.supportsSurroundSound) {
+        item {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            ) {
+                SurroundSoundControl(
+                    address = connectedDeviceAddress,
+                    route = deviceRoute,
+                )
+            }
+        }
+    }
+
+    if (deviceRoute.supportsLdac) {
+        item {
+            Card(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            ) {
+                LdacControl(
                     address = connectedDeviceAddress,
                     route = deviceRoute,
                 )

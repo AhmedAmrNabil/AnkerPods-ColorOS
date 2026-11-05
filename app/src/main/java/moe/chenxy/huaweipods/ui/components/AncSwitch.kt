@@ -1,5 +1,6 @@
 package moe.chenxy.huaweipods.ui.components
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -35,6 +38,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,8 +55,15 @@ import moe.chenxy.huaweipods.pods.supportsDiscreteAncLevels
 import moe.chenxy.huaweipods.pods.supportsSoundcoreAnc
 import moe.chenxy.huaweipods.pods.supportsTransparency
 import moe.chenxy.huaweipods.pods.defaultTransparencySubMode
+import moe.chenxy.huaweipods.backend.soundcore.SoundcoreBackend
+import moe.chenxy.huaweipods.backend.soundcore.SoundcoreStateManager
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.RadioButton
+import top.yukonga.miuix.kmp.basic.RadioButtonDefaults
 import top.yukonga.miuix.kmp.basic.Slider
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.SinkFeedback
@@ -268,7 +279,7 @@ private fun SoundcoreNoiseControlSection(
     val isTransparencySelected = ancStatus == NoiseControlMode.TRANSPARENCY
     val isAdaptiveSelected = ancStatus == NoiseControlMode.NOISE_CANCELLATION && isAdaptive
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth().animateContentSize()) {
         if (showTitle) {
             Text(
                 text = stringResource(R.string.noise_control_title),
@@ -333,65 +344,229 @@ private fun SoundcoreNoiseControlSection(
             )
         }
 
-        // Show strength slider ONLY when Noise Cancelling (Manual mode) is chosen
-        if (isCancellingSelected) {
-            val sliderHorizontalPadding = if (!showTitle) 4.dp else if (compact) 12.dp else 16.dp
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = sliderHorizontalPadding,
-                        end = sliderHorizontalPadding,
-                        top = 4.dp,
-                        bottom = 8.dp,
-                    ),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    Text(
-                        text = stringResource(R.string.soundcore_anc_manual_level),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MiuixTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = "$savedManualLevel/$maxManualLevel",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
-                }
+        val hasSubControl = isCancellingSelected || isAdaptiveSelected || isTransparencySelected
+        if (hasSubControl) {
+            val horizontalPadding = if (!showTitle) 4.dp else if (compact) 12.dp else 24.dp
+            val unifiedSubControlHeight = 62.dp
+            val unifiedVerticalPadding = if (!showTitle) 4.dp else 4.dp
 
-                Slider(
-                    value = sliderFloat,
-                    onValueChange = { newFloat ->
-                        sliderFloat = newFloat
-                        val rounded = newFloat.roundToInt().coerceIn(1, maxManualLevel)
-                        if (rounded != savedManualLevel) {
-                            savedManualLevel = rounded
-                            onHuaweiAncLevelChange?.invoke(rounded)
-                        }
-                    },
-                    onValueChangeFinished = {
-                        val rounded = sliderFloat.roundToInt().coerceIn(1, maxManualLevel)
-                        sliderFloat = rounded.toFloat()
-                        if (rounded != savedManualLevel) {
-                            savedManualLevel = rounded
-                            onHuaweiAncLevelChange?.invoke(rounded)
-                        }
-                    },
-                    valueRange = 1f..maxManualLevel.toFloat(),
-                    steps = if (maxManualLevel > 2) maxManualLevel - 2 else 0,
-                    showKeyPoints = true,
-                    keyPoints = (1..maxManualLevel).map { it.toFloat() },
+            if (isCancellingSelected) {
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 4.dp),
-                )
+                        .heightIn(min = unifiedSubControlHeight)
+                        .padding(
+                            start = horizontalPadding,
+                            end = horizontalPadding,
+                            top = unifiedVerticalPadding,
+                            bottom = unifiedVerticalPadding,
+                        ),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.soundcore_anc_manual_level),
+                            color = MiuixTheme.colorScheme.onSurface,
+                            style = MiuixTheme.textStyles.headline1,
+                        )
+                        Text(
+                            text = "$savedManualLevel/$maxManualLevel",
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            style = MiuixTheme.textStyles.body2,
+                        )
+                    }
+
+                    Slider(
+                        value = sliderFloat,
+                        onValueChange = { newFloat ->
+                            sliderFloat = newFloat
+                            val rounded = newFloat.roundToInt().coerceIn(1, maxManualLevel)
+                            if (rounded != savedManualLevel) {
+                                savedManualLevel = rounded
+                                onHuaweiAncLevelChange?.invoke(rounded)
+                            }
+                        },
+                        onValueChangeFinished = {
+                            val rounded = sliderFloat.roundToInt().coerceIn(1, maxManualLevel)
+                            sliderFloat = rounded.toFloat()
+                            if (rounded != savedManualLevel) {
+                                savedManualLevel = rounded
+                                onHuaweiAncLevelChange?.invoke(rounded)
+                            }
+                        },
+                        valueRange = 1f..maxManualLevel.toFloat(),
+                        steps = if (maxManualLevel > 2) maxManualLevel - 2 else 0,
+                        showKeyPoints = true,
+                        keyPoints = (1..maxManualLevel).map { it.toFloat() },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            } else if (isAdaptiveSelected) {
+                var envDetection by remember { mutableStateOf(SoundcoreStateManager.environmentDetection) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = unifiedSubControlHeight)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(role = Role.Switch) {
+                            val target = !envDetection
+                            envDetection = target
+                            SoundcoreBackend.setEnvironmentDetection(target)
+                        }
+                        .padding(
+                            start = horizontalPadding,
+                            end = horizontalPadding,
+                            top = unifiedVerticalPadding,
+                            bottom = unifiedVerticalPadding,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.soundcore_environment_detection),
+                            color = MiuixTheme.colorScheme.onSurface,
+                            style = MiuixTheme.textStyles.headline1,
+                        )
+                        Text(
+                            text = stringResource(R.string.soundcore_environment_detection_summary),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            style = MiuixTheme.textStyles.body2,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(
+                        checked = envDetection,
+                        onCheckedChange = { target ->
+                            envDetection = target
+                            SoundcoreBackend.setEnvironmentDetection(target)
+                        }
+                    )
+                }
+            } else if (isTransparencySelected) {
+                var transMode by remember { mutableStateOf(SoundcoreStateManager.transparencyMode) }
+                val pillBg = MiuixTheme.colorScheme.secondary
+                val primaryColor = MiuixTheme.colorScheme.primary
+                val transVerticalPadding = if (!showTitle) 8.dp else 14.dp
+                val checkSlotSize = 18.dp
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            top = transVerticalPadding,
+                            bottom = transVerticalPadding,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.soundcore_transparency_mode),
+                        color = MiuixTheme.colorScheme.onSurface,
+                        style = MiuixTheme.textStyles.headline1,
+                        modifier = Modifier.padding(horizontal = horizontalPadding),
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = horizontalPadding),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Option 0: Full Transparent
+                        val isFull = transMode == 0
+                        val interaction0 = remember { MutableInteractionSource() }
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(pillBg)
+                                .pressable(interactionSource = interaction0, indication = SinkFeedback())
+                                .clickable(
+                                    interactionSource = interaction0,
+                                    indication = null,
+                                    role = Role.RadioButton,
+                                ) {
+                                    transMode = 0
+                                    SoundcoreBackend.setTransparencyMode(0)
+                                }
+                                .padding(start = 10.dp, end = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Start,
+                        ) {
+                            Box(
+                                modifier = Modifier.size(checkSlotSize),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                RadioButton(
+                                    selected = isFull,
+                                    onClick = null,
+                                    modifier = Modifier.scale(0.7f),
+                                    colors = RadioButtonDefaults.radioButtonColors(
+                                        selectedColor = primaryColor,
+                                    ),
+                                )
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.soundcore_transparency_full),
+                                color = if (isFull) primaryColor else MiuixTheme.colorScheme.onSurface,
+                                fontSize = 13.sp,
+                                fontWeight = if (isFull) FontWeight.Medium else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        // Option 1: Vocal Mode
+                        val isVocal = transMode == 1
+                        val interaction1 = remember { MutableInteractionSource() }
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(pillBg)
+                                .pressable(interactionSource = interaction1, indication = SinkFeedback())
+                                .clickable(
+                                    interactionSource = interaction1,
+                                    indication = null,
+                                    role = Role.RadioButton,
+                                ) {
+                                    transMode = 1
+                                    SoundcoreBackend.setTransparencyMode(1)
+                                }
+                                .padding(start = 10.dp, end = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Start,
+                        ) {
+                            Box(
+                                modifier = Modifier.size(checkSlotSize),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                RadioButton(
+                                    selected = isVocal,
+                                    onClick = null,
+                                    modifier = Modifier.scale(0.7f),
+                                    colors = RadioButtonDefaults.radioButtonColors(
+                                        selectedColor = primaryColor,
+                                    ),
+                                )
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.soundcore_transparency_vocal),
+                                color = if (isVocal) primaryColor else MiuixTheme.colorScheme.onSurface,
+                                fontSize = 13.sp,
+                                fontWeight = if (isVocal) FontWeight.Medium else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

@@ -268,6 +268,7 @@ object SoundcoreBackend : EarbudBackend {
         sendConnectedBroadcast(device, deviceName)
         sendAncLevel(SoundcoreStateManager.cachedManualAncLevel)
         sendRequestState(force = true)
+        requestLdacState()
 
         // Launch periodic refresh / keep-alive heartbeat
         val heartbeatJob = backendScope?.launch {
@@ -420,6 +421,9 @@ object SoundcoreBackend : EarbudBackend {
                 SoundcoreStateManager.ancMode = soundModes.ancMode
                 SoundcoreStateManager.ancSubMode = if (soundModes.isAdaptive) soundModes.ancSubMode else SoundcoreStateManager.cachedManualAncLevel
                 SoundcoreStateManager.isAdaptiveAnc = soundModes.isAdaptive
+                SoundcoreStateManager.transparencyMode = soundModes.transparencyMode
+                SoundcoreStateManager.windNoiseReduction = soundModes.windNoise
+                SoundcoreStateManager.environmentDetection = soundModes.environmentDetection
                 _state.update {
                     it.copy(
                         ancMode = soundModes.ancMode,
@@ -431,6 +435,14 @@ object SoundcoreBackend : EarbudBackend {
                 sendAncLevel(SoundcoreStateManager.cachedManualAncLevel)
                 if (SoundcoreStateManager.isReady) {
                     MiuiStrongToastUtil.showPodsNotificationByMiuiBt(context, SoundcoreStateManager.toBatteryParams(), device)
+                }
+            }
+            SoundcorePacket.CMD_LDAC_STATE_INBOUND -> {
+                if (packet.body.isNotEmpty()) {
+                    val ldacEnabled = (packet.body[0].toInt() and 0xFF) == 1
+                    SoundcoreStateManager.ldac = ldacEnabled
+                    sendLdac(ldacEnabled)
+                    Log.i(TAG, "Soundcore LDAC state received: enabled=$ldacEnabled")
                 }
             }
         }
@@ -471,6 +483,17 @@ object SoundcoreBackend : EarbudBackend {
     }
 
     override fun setAncMode(mode: NoiseControlMode, subMode: Int?, isAdaptive: Boolean) {
+        setAncMode(mode, subMode, isAdaptive, null, null, null)
+    }
+
+    fun setAncMode(
+        mode: NoiseControlMode,
+        subMode: Int? = null,
+        isAdaptive: Boolean = false,
+        transparencyMode: Int? = null,
+        windNoise: Boolean? = null,
+        environmentDetection: Boolean? = null,
+    ) {
         val maxLevel = if (activeModel == SoundcoreModel.A3952) 3 else 5
         val targetSubMode = if (mode == NoiseControlMode.NOISE_CANCELLATION) {
             if (isAdaptive) {
@@ -483,15 +506,32 @@ object SoundcoreBackend : EarbudBackend {
             }
         } else null
 
+        if (transparencyMode != null) {
+            SoundcoreStateManager.transparencyMode = transparencyMode
+        }
+        if (windNoise != null) {
+            SoundcoreStateManager.windNoiseReduction = windNoise
+        }
+        if (environmentDetection != null) {
+            SoundcoreStateManager.environmentDetection = environmentDetection
+        }
+
+        val effTransparency = transparencyMode ?: SoundcoreStateManager.transparencyMode
+        val effWindNoise = windNoise ?: SoundcoreStateManager.windNoiseReduction
+        val effEnvDetection = environmentDetection ?: SoundcoreStateManager.environmentDetection
+
         val packetBytes = SoundcorePacket.buildSetSoundModesPacket(
             mode = mode,
             subMode = targetSubMode,
             isAdaptive = isAdaptive,
             model = activeModel,
             cachedManualLevel = SoundcoreStateManager.cachedManualAncLevel,
+            transparencyMode = effTransparency,
+            windNoise = effWindNoise,
+            environmentDetection = effEnvDetection,
         )
         val hexBytes = packetBytes.joinToString(" ") { "%02X".format(it) }
-        Log.i(TAG, ">>> SENDING CONTROL [SetSoundModes]: mode=$mode, adaptive=$isAdaptive, targetSubMode=$targetSubMode (cachedManual=${SoundcoreStateManager.cachedManualAncLevel}) | bytes=[$hexBytes]")
+        Log.i(TAG, ">>> SENDING CONTROL [SetSoundModes]: mode=$mode, adaptive=$isAdaptive, targetSubMode=$targetSubMode (cachedManual=${SoundcoreStateManager.cachedManualAncLevel}, trans=$effTransparency, wind=$effWindNoise, env=$effEnvDetection) | bytes=[$hexBytes]")
         lastSetSoundModesTime = SystemClock.elapsedRealtime()
         pendingAncMode = mode
         pendingIsAdaptive = isAdaptive
@@ -516,6 +556,79 @@ object SoundcoreBackend : EarbudBackend {
             val effectiveBattery = SoundcoreStateManager.toBatteryParams()
             MiuiStrongToastUtil.showPodsNotificationByMiuiBt(currentContext, effectiveBattery, currentDevice)
         }
+    }
+
+    fun setTransparencyMode(mode: Int) {
+        setAncMode(
+            mode = _state.value.ancMode,
+            subMode = _state.value.ancSubMode,
+            isAdaptive = _state.value.isAdaptiveAnc,
+            transparencyMode = mode,
+        )
+    }
+
+    fun setWindNoiseReduction(enabled: Boolean) {
+        setAncMode(
+            mode = _state.value.ancMode,
+            subMode = _state.value.ancSubMode,
+            isAdaptive = _state.value.isAdaptiveAnc,
+            windNoise = enabled,
+        )
+    }
+
+    fun setEnvironmentDetection(enabled: Boolean) {
+        setAncMode(
+            mode = _state.value.ancMode,
+            subMode = _state.value.ancSubMode,
+            isAdaptive = true,
+            environmentDetection = enabled,
+        )
+    }
+
+    fun setSurroundSound(enabled: Boolean) {
+        val packet = SoundcorePacket.buildSetSurroundSoundPacket(enabled)
+        val hexBytes = packet.joinToString(" ") { "%02X".format(it) }
+        Log.i(TAG, ">>> SENDING CONTROL [SetSurroundSound]: enabled=$enabled | bytes=[$hexBytes]")
+        val success = sendRawPacket(packet)
+        SoundcoreStateManager.surroundSound = enabled
+        sendSurroundSound(enabled, writeSuccess = success)
+        Log.i(TAG, "Set surround sound (3D audio): enabled=$enabled success=$success")
+    }
+
+    fun setLdac(enabled: Boolean) {
+        val packet = SoundcorePacket.buildSetLdacPacket(enabled)
+        val hexBytes = packet.joinToString(" ") { "%02X".format(it) }
+        Log.i(TAG, ">>> SENDING CONTROL [SetLdac]: enabled=$enabled | bytes=[$hexBytes]")
+        val success = sendRawPacket(packet)
+        SoundcoreStateManager.ldac = enabled
+        sendLdac(enabled, writeSuccess = success)
+        Log.i(TAG, "Set LDAC: enabled=$enabled success=$success")
+    }
+
+    fun requestLdacState() {
+        val packet = SoundcorePacket.buildRequestLdacStatePacket()
+        Log.i(TAG, ">>> SENDING CONTROL [RequestLdacState]")
+        sendRawPacket(packet)
+    }
+
+    private fun sendSurroundSound(enabled: Boolean, writeSuccess: Boolean? = null) {
+        val ctx = appContext ?: return
+        val fill: Intent.() -> Unit = {
+            putExtra("soundcore_surround_sound_enabled", enabled)
+            writeSuccess?.let { putExtra("soundcore_surround_sound_write_success", it) }
+        }
+        sendAppBroadcast(ctx, "chen.action.huaweipods.coloros.soundcore_surround_changed", fill)
+        sendExternalBroadcast(ctx, "chen.action.huaweipods.coloros.soundcore_surround_changed", fill)
+    }
+
+    private fun sendLdac(enabled: Boolean, writeSuccess: Boolean? = null) {
+        val ctx = appContext ?: return
+        val fill: Intent.() -> Unit = {
+            putExtra("soundcore_ldac_enabled", enabled)
+            writeSuccess?.let { putExtra("soundcore_ldac_write_success", it) }
+        }
+        sendAppBroadcast(ctx, "chen.action.huaweipods.coloros.soundcore_ldac_changed", fill)
+        sendExternalBroadcast(ctx, "chen.action.huaweipods.coloros.soundcore_ldac_changed", fill)
     }
 
     override fun cycleAncMode() {

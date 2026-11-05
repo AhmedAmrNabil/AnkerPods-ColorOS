@@ -26,12 +26,19 @@ data class SoundcoreStateUpdate(
     val isAdaptiveAnc: Boolean = false,
     val gamingMode: Boolean? = null,
     val wearDetection: Boolean? = null,
+    val surroundSound: Boolean? = null,
+    val transparencyMode: Int = 0,
+    val windNoise: Boolean = true,
+    val environmentDetection: Boolean = false,
 )
 
 data class SoundcoreSoundModes(
     val ancMode: NoiseControlMode,
     val ancSubMode: Int? = null,
     val isAdaptive: Boolean = false,
+    val transparencyMode: Int = 0,
+    val windNoise: Boolean = true,
+    val environmentDetection: Boolean = false,
 )
 
 object SoundcorePacket {
@@ -46,6 +53,10 @@ object SoundcorePacket {
     const val CMD_SET_SOUND_MODES_OUTBOUND = 0x8106 // [0x06, 0x81]
     const val CMD_SET_GAMING_MODE = 0x8510 // [0x10, 0x85]
     const val CMD_SET_WEARING_DETECTION = 0x8101 // [0x01, 0x81]
+    const val CMD_SET_SURROUND_SOUND = 0x8602 // [0x02, 0x86]
+    const val CMD_SET_LDAC = 0xFF01 // [0x01, 0xFF]
+    const val CMD_REQUEST_LDAC_STATE = 0x7F01 // [0x01, 0x7F]
+    const val CMD_LDAC_STATE_INBOUND = 0x7F01 // [0x01, 0x7F]
 
     fun calculateChecksum(data: ByteArray, offset: Int = 0, length: Int = data.size): Byte {
         var sum = 0
@@ -90,7 +101,12 @@ object SoundcorePacket {
         isAdaptive: Boolean = false,
         model: SoundcoreModel = SoundcoreModel.A3947,
         cachedManualLevel: Int? = null,
+        transparencyMode: Int = 0,
+        windNoise: Boolean = true,
+        environmentDetection: Boolean? = null,
+        transportationMode: Int = 0,
     ): ByteArray {
+        val effectiveEnvDetection = environmentDetection ?: isAdaptive
         val body = when (model) {
             SoundcoreModel.A3952 -> when (mode) {
                 NoiseControlMode.NOISE_CANCELLATION -> {
@@ -132,11 +148,11 @@ object SoundcorePacket {
                         byteArrayOf(
                             0x00,
                             ((manualLevel shl 4) or adaptiveLevel).toByte(),
-                            0x01,
+                            transparencyMode.toByte(),
                             0x01, // Adaptive (nc_mode = 1)
-                            0x01,
-                            0x01,
-                            0x00
+                            (if (windNoise) 0x01 else 0x00).toByte(),
+                            (if (effectiveEnvDetection) 0x01 else 0x00).toByte(),
+                            transportationMode.toByte()
                         )
                     } else {
                         // Manual noise cancelling
@@ -144,23 +160,56 @@ object SoundcorePacket {
                         byteArrayOf(
                             0x00,
                             ((manualLevel shl 4) or 0x00).toByte(),
-                            0x01,
+                            transparencyMode.toByte(),
                             0x00, // Manual (nc_mode = 0)
-                            0x01,
+                            (if (windNoise) 0x01 else 0x00).toByte(),
                             0x00, // environment_detection: false in manual mode
-                            0x00  // transportation_mode: 0
+                            transportationMode.toByte()
                         )
                     }
                 }
                 NoiseControlMode.TRANSPARENCY -> byteArrayOf(
-                    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00
+                    0x01,
+                    (if (cachedManualLevel != null) ((cachedManualLevel.coerceIn(1, 5) shl 4)).toByte() else 0x00.toByte()),
+                    transparencyMode.toByte(),
+                    0x00,
+                    (if (windNoise) 0x01 else 0x00).toByte(),
+                    (if (effectiveEnvDetection) 0x01 else 0x00).toByte(),
+                    transportationMode.toByte()
                 )
                 NoiseControlMode.OFF, NoiseControlMode.UNKNOWN -> byteArrayOf(
-                    0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00
+                    0x02,
+                    (if (cachedManualLevel != null) ((cachedManualLevel.coerceIn(1, 5) shl 4)).toByte() else 0x00.toByte()),
+                    transparencyMode.toByte(),
+                    0x00,
+                    (if (windNoise) 0x01 else 0x00).toByte(),
+                    (if (effectiveEnvDetection) 0x01 else 0x00).toByte(),
+                    transportationMode.toByte()
                 )
             }
         }
         return buildPacket(byteArrayOf(0x06, 0x81.toByte()), body)
+    }
+
+    /**
+     * Builds the SetSurroundSound (3D audio) packet for A3947 (cmd [0x02, 0x86]).
+     */
+    fun buildSetSurroundSoundPacket(enabled: Boolean): ByteArray {
+        return buildPacket(byteArrayOf(0x02, 0x86.toByte()), byteArrayOf(if (enabled) 0x01 else 0x00))
+    }
+
+    /**
+     * Builds the SetLdac packet for A3947 (cmd [0x01, 0xFF]).
+     */
+    fun buildSetLdacPacket(enabled: Boolean): ByteArray {
+        return buildPacket(byteArrayOf(0x01, 0xFF.toByte()), byteArrayOf(if (enabled) 0x01 else 0x00))
+    }
+
+    /**
+     * Builds the RequestLdacState query packet for A3947 (cmd [0x01, 0x7F]).
+     */
+    fun buildRequestLdacStatePacket(): ByteArray {
+        return buildPacket(byteArrayOf(0x01, 0x7F))
     }
 
     /**
@@ -323,9 +372,18 @@ object SoundcorePacket {
             }
         }
 
+        val transparencyMode = if (body.size > 128) body[128].toInt() and 0xFF else 0
+        val windNoise = if (body.size > 130) (body[130].toInt() and 1) != 0 else true
+        val environmentDetection = if (body.size > 131) (body[131].toInt() and 1) != 0 else false
+
         // Gaming mode at offset 143 if present
         val gamingMode = if (body.size > 143) {
             (body[143].toInt() and 0xFF) == 1
+        } else null
+
+        // Surround sound at offset 148 if present
+        val surroundSound = if (body.size > 148) {
+            (body[148].toInt() and 0xFF) == 1
         } else null
 
         // Auto play/pause (wear detection) at offset 152 if present
@@ -340,6 +398,10 @@ object SoundcorePacket {
             isAdaptiveAnc = isAdaptiveAnc,
             gamingMode = gamingMode,
             wearDetection = wearDetection,
+            surroundSound = surroundSound,
+            transparencyMode = transparencyMode,
+            windNoise = windNoise,
+            environmentDetection = environmentDetection,
         )
     }
 
@@ -531,6 +593,9 @@ object SoundcorePacket {
             else -> NoiseControlMode.UNKNOWN
         }
         var isAdaptive = false
+        val transparencyMode = if (body.size > 2) body[2].toInt() and 0xFF else 0
+        val windNoise = if (body.size > 4) (body[4].toInt() and 1) != 0 else true
+        val environmentDetection = if (body.size > 5) (body[5].toInt() and 1) != 0 else false
         val subMode = if (mode == NoiseControlMode.NOISE_CANCELLATION && body.size > 3) {
             val ncMode = body[3].toInt() and 0xFF
             if (ncMode == 0) {
@@ -551,6 +616,13 @@ object SoundcorePacket {
                 }
             }
         } else null
-        return SoundcoreSoundModes(mode, subMode, isAdaptive)
+        return SoundcoreSoundModes(
+            ancMode = mode,
+            ancSubMode = subMode,
+            isAdaptive = isAdaptive,
+            transparencyMode = transparencyMode,
+            windNoise = windNoise,
+            environmentDetection = environmentDetection,
+        )
     }
 }

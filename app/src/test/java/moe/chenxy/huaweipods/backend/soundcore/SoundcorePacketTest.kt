@@ -316,4 +316,268 @@ class SoundcorePacketTest {
         // Cached manual level MUST be updated when in Manual mode
         assertEquals(4, SoundcoreStateManager.cachedManualAncLevel)
     }
+
+    @Test
+    fun testBuildSetSurroundSoundPacketMatchesOpenScq30Fixture() {
+        // OpenSCQ30 fixture: a3947.rs set_surround_sound test (Command [0x02, 0x86])
+        val expectedTrue = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x02, 0x86.toByte(), 0x0b.toByte(), 0x00,
+            0x01,
+            0x8a.toByte()
+        )
+        val actualTrue = SoundcorePacket.buildSetSurroundSoundPacket(true)
+        assertArrayEquals(expectedTrue, actualTrue)
+
+        val expectedFalse = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x02, 0x86.toByte(), 0x0b.toByte(), 0x00,
+            0x00,
+            0x89.toByte()
+        )
+        val actualFalse = SoundcorePacket.buildSetSurroundSoundPacket(false)
+        assertArrayEquals(expectedFalse, actualFalse)
+    }
+
+    @Test
+    fun testBuildSetLdacPacketMatchesOpenScq30Fixture() {
+        // OpenSCQ30: common/modules/flag.rs Ldac flag (Command [0x01, 0xFF])
+        val expectedTrue = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x01, 0xff.toByte(), 0x0b.toByte(), 0x00,
+            0x01,
+            0x02.toByte()
+        )
+        val actualTrue = SoundcorePacket.buildSetLdacPacket(true)
+        assertArrayEquals(expectedTrue, actualTrue)
+
+        val expectedFalse = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x01, 0xff.toByte(), 0x0b.toByte(), 0x00,
+            0x00,
+            0x01.toByte()
+        )
+        val actualFalse = SoundcorePacket.buildSetLdacPacket(false)
+        assertArrayEquals(expectedFalse, actualFalse)
+    }
+
+    @Test
+    fun testBuildRequestLdacStatePacketMatchesOpenScq30Fixture() {
+        // OpenSCQ30: common/packet/outbound/request_ldac_state.rs (Command [0x01, 0x7F])
+        val expected = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x01, 0x7f, 0x0a.toByte(), 0x00,
+            0x80.toByte()
+        )
+        val actual = SoundcorePacket.buildRequestLdacStatePacket()
+        assertArrayEquals(expected, actual)
+    }
+
+    @Test
+    fun testBuildSetGamingModePacketMatchesOpenScq30Fixture() {
+        // OpenSCQ30: a3947.rs set_gaming_mode test (Command [0x10, 0x85])
+        val expectedTrue = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x10, 0x85.toByte(), 0x0b.toByte(), 0x00,
+            0x01,
+            0x97.toByte()
+        )
+        val actualTrue = SoundcorePacket.buildSetGamingModePacket(true)
+        assertArrayEquals(expectedTrue, actualTrue)
+
+        val expectedFalse = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x10, 0x85.toByte(), 0x0b.toByte(), 0x00,
+            0x00,
+            0x96.toByte()
+        )
+        val actualFalse = SoundcorePacket.buildSetGamingModePacket(false)
+        assertArrayEquals(expectedFalse, actualFalse)
+    }
+
+    @Test
+    fun testBuildSetWearingDetectionPacketMatchesOpenScq30Fixture() {
+        // OpenSCQ30: a3947.rs set_auto_play_pause test (Command [0x01, 0x81])
+        val expectedTrue = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x01, 0x81.toByte(), 0x0b.toByte(), 0x00,
+            0x01,
+            0x84.toByte()
+        )
+        val actualTrue = SoundcorePacket.buildSetWearingDetectionPacket(true)
+        assertArrayEquals(expectedTrue, actualTrue)
+
+        val expectedFalse = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x01, 0x81.toByte(), 0x0b.toByte(), 0x00,
+            0x00,
+            0x83.toByte()
+        )
+        val actualFalse = SoundcorePacket.buildSetWearingDetectionPacket(false)
+        assertArrayEquals(expectedFalse, actualFalse)
+    }
+
+    @Test
+    fun testBuildSetSoundModesNormalMatchesOpenScq30A3947Fixture() {
+        // OpenSCQ30: a3947.rs test_set_sound_mode_normal (Command [0x06, 0x81], body: [2, 80, 1, 0, 1, 1, 3])
+        val expected = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x06, 0x81.toByte(), 0x11.toByte(), 0x00,
+            0x02, 0x50, 0x01, 0x00, 0x01, 0x01, 0x03,
+            0xe6.toByte()
+        )
+        val actual = SoundcorePacket.buildSetSoundModesPacket(
+            mode = NoiseControlMode.OFF,
+            model = SoundcoreModel.A3947,
+            cachedManualLevel = 5,
+            transparencyMode = 1,
+            windNoise = true,
+            environmentDetection = true,
+            transportationMode = 3,
+        )
+        assertArrayEquals(expected, actual)
+    }
+
+    @Test
+    fun testBuildSetSoundModesManualAncMatchesOpenScq30A3947() {
+        // Manual ANC Level 5, Transparency Vocal, Wind Noise True, Transport Car
+        val expected = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x06, 0x81.toByte(), 0x11.toByte(), 0x00,
+            0x00, 0x50, 0x01, 0x00, 0x01, 0x00, 0x03,
+            0xe3.toByte()
+        )
+        val actual = SoundcorePacket.buildSetSoundModesPacket(
+            mode = NoiseControlMode.NOISE_CANCELLATION,
+            subMode = 5,
+            isAdaptive = false,
+            model = SoundcoreModel.A3947,
+            cachedManualLevel = 5,
+            transparencyMode = 1,
+            windNoise = true,
+            transportationMode = 3,
+        )
+        assertArrayEquals(expected, actual)
+    }
+
+    @Test
+    fun testBuildSetSoundModesAdaptiveAncMatchesOpenScq30A3947() {
+        // Adaptive ANC Level 3 + Environment Detection, cached manual 5, Vocal Transparency, Wind Noise True, Transport Car
+        val expected = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x06, 0x81.toByte(), 0x11.toByte(), 0x00,
+            0x00, 0x53, 0x01, 0x01, 0x01, 0x01, 0x03,
+            0xe8.toByte()
+        )
+        val actual = SoundcorePacket.buildSetSoundModesPacket(
+            mode = NoiseControlMode.NOISE_CANCELLATION,
+            subMode = 3,
+            isAdaptive = true,
+            model = SoundcoreModel.A3947,
+            cachedManualLevel = 5,
+            transparencyMode = 1,
+            windNoise = true,
+            environmentDetection = true,
+            transportationMode = 3,
+        )
+        assertArrayEquals(expected, actual)
+    }
+
+    @Test
+    fun testBuildSetSoundModesTransparencyModesMatchesOpenScq30A3947() {
+        // Vocal Mode (1)
+        val expectedVocal = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x06, 0x81.toByte(), 0x11.toByte(), 0x00,
+            0x01, 0x50, 0x01, 0x00, 0x01, 0x00, 0x03,
+            0xe4.toByte()
+        )
+        val actualVocal = SoundcorePacket.buildSetSoundModesPacket(
+            mode = NoiseControlMode.TRANSPARENCY,
+            model = SoundcoreModel.A3947,
+            cachedManualLevel = 5,
+            transparencyMode = 1,
+            windNoise = true,
+            transportationMode = 3,
+        )
+        assertArrayEquals(expectedVocal, actualVocal)
+
+        // Fully Transparent (0)
+        val expectedFull = byteArrayOf(
+            0x08, 0xee.toByte(), 0x00, 0x00, 0x00,
+            0x06, 0x81.toByte(), 0x11.toByte(), 0x00,
+            0x01, 0x50, 0x00, 0x00, 0x01, 0x00, 0x03,
+            0xe3.toByte()
+        )
+        val actualFull = SoundcorePacket.buildSetSoundModesPacket(
+            mode = NoiseControlMode.TRANSPARENCY,
+            model = SoundcoreModel.A3947,
+            cachedManualLevel = 5,
+            transparencyMode = 0,
+            windNoise = true,
+            transportationMode = 3,
+        )
+        assertArrayEquals(expectedFull, actualFull)
+    }
+
+    @Test
+    fun testA3947KnownGoodStateUpdatePacketFromOpenScq30() {
+        // Known-good packet body from OpenSCQ30 a3947.rs test fixture (lines 538-550)
+        val bodyInts = intArrayOf(
+            1, 1, 2, 4, 0, 0, 48, 53, 46, 56, 56, 48, 53, 46, 56, 56, 51, 57, 52,
+            55, 66, 54, 54, 50, 70, 68, 67, 67, 69, 69, 69, 56, 48, 48, 46, 48, 48,
+            254, 254, 120, 120, 120, 120, 120, 120, 120, 120, 120, 120, 255, 255,
+            255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 112, 117, 140, 148, 150,
+            142, 134, 131, 60, 60, 112, 117, 140, 148, 150, 142, 134, 131, 60, 60,
+            104, 100, 34, 64, 0, 112, 117, 140, 148, 150, 142, 134, 131, 60, 60,
+            112, 117, 140, 148, 150, 142, 134, 131, 60, 60, 0, 0, 18, 17, 102, 17,
+            101, 17, 50, 17, 51, 17, 68, 17, 68, 0, 33, 0, 32, 0x35, 0, 0x50, 1, 0,
+            1, 1, 3, 0, 0, 0, 0, 255, 1, 2, 49, 1, 0, 0, 1, 0, 0, 1, 0, 1, 80, 1,
+            0, 0, 1, 1, 1, 1, 255
+        )
+        val body = ByteArray(bodyInts.size) { bodyInts[it].toByte() }
+
+        val detectedModel = SoundcorePacket.detectModelFromStateUpdate(body)
+        assertEquals(SoundcoreModel.A3947, detectedModel)
+
+        val result = SoundcorePacket.parseA3947StateUpdate(body)
+        assertNotNull(result)
+
+        // Verified against OpenSCQ30 a3947.rs assert_setting_values:
+        // BatteryLevelLeft: 2/5 -> 40%
+        // BatteryLevelRight: 4/5 -> 80%
+        // CaseBatteryLevel: 2/5 -> 40%
+        // IsCharging: false
+        assertEquals(40, result!!.battery.left?.battery)
+        assertEquals(80, result.battery.right?.battery)
+        assertEquals(40, result.battery.case?.battery)
+        assertEquals(false, result.battery.left?.isCharging)
+        assertEquals(false, result.battery.right?.isCharging)
+        assertEquals(true, result.battery.left?.isConnected)
+        assertEquals(true, result.battery.right?.isConnected)
+        assertEquals(true, result.battery.case?.isConnected)
+
+        // Ambient mode: NoiseCanceling, Manual mode, Level 5
+        assertEquals(NoiseControlMode.NOISE_CANCELLATION, result.ancMode)
+        assertEquals(false, result.isAdaptiveAnc)
+        assertEquals(5, result.ancSubMode)
+
+        // Transparency: VocalMode (1)
+        assertEquals(1, result.transparencyMode)
+
+        // Wind noise: true
+        assertEquals(true, result.windNoise)
+
+        // Environment detection: true
+        assertEquals(true, result.environmentDetection)
+
+        // Gaming mode: false
+        assertEquals(false, result.gamingMode)
+
+        // Surround sound: false
+        assertEquals(false, result.surroundSound)
+
+        // Wear detection (auto play/pause): false
+        assertEquals(false, result.wearDetection)
+    }
 }

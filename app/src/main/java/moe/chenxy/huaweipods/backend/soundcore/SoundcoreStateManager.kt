@@ -42,6 +42,16 @@ object SoundcoreStateManager {
         internal set
     var wearDetection: Boolean? = null
         internal set
+    var surroundSound: Boolean? = null
+        internal set
+    var ldac: Boolean? = null
+        internal set
+    var transparencyMode: Int = 0
+        internal set
+    var windNoiseReduction: Boolean = true
+        internal set
+    var environmentDetection: Boolean = false
+        internal set
 
     var activeModel: SoundcoreModel = SoundcoreModel.A3947
     var cachedManualAncLevel: Int = 5
@@ -145,9 +155,29 @@ object SoundcoreStateManager {
                     }
                 }
 
+                // Transparency mode at offset 128 if present
+                if (body.size > 128) {
+                    transparencyMode = body[128].toInt() and 0xFF
+                }
+
+                // Wind noise reduction at offset 130 if present
+                if (body.size > 130) {
+                    windNoiseReduction = (body[130].toInt() and 1) != 0
+                }
+
+                // Environment detection at offset 131 if present
+                if (body.size > 131) {
+                    environmentDetection = (body[131].toInt() and 1) != 0
+                }
+
                 // Gaming mode at offset 143 if present
                 if (body.size > 143) {
                     gamingMode = (body[143].toInt() and 0xFF) == 1
+                }
+
+                // Surround sound at offset 148 if present
+                if (body.size > 148) {
+                    surroundSound = (body[148].toInt() and 0xFF) == 1
                 }
 
                 // Auto play/pause (wear detection) at offset 152 if present
@@ -285,6 +315,11 @@ object SoundcoreStateManager {
         isAdaptiveAnc = false
         gamingMode = null
         wearDetection = null
+        surroundSound = null
+        ldac = null
+        transparencyMode = 0
+        windNoiseReduction = true
+        environmentDetection = false
         activeModel = SoundcoreModel.A3947
     }
 }

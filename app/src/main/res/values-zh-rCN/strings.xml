@@ -277,4 +277,13 @@
     <string name="onboarding_ready_group">遇到问题或需要反馈，请在 GitHub Issues 提交：ByteJuno/HuaweiPods-ColorOS</string>
     <string name="huawei_equalizer_title">自定义均衡器</string>
     <string name="huawei_equalizer_summary">编辑前会先读取耳机当前曲线</string>
+    <string name="soundcore_surround_sound">3D 环绕声</string>
+    <string name="soundcore_surround_sound_summary">虚拟 3D 音效体验</string>
+    <string name="soundcore_environment_detection">环境检测</string>
+    <string name="soundcore_environment_detection_summary">暂停音频播放 2 秒检测周围环境噪音后自动恢复</string>
+    <string name="soundcore_transparency_mode">通透模式</string>
+    <string name="soundcore_transparency_full">完全通透</string>
+    <string name="soundcore_transparency_vocal">人声模式</string>
+    <string name="soundcore_ldac">LDAC</string>
+    <string name="soundcore_ldac_summary">高解析度音频传输，可能会增加功耗</string>
 </resources>

@@ -172,12 +172,33 @@ class DeviceCapabilitiesTest {
     }
 
     @Test
-    fun `wind noise reduction is restricted to captured FreeBuds SE 4 ANC route`() {
+    fun `wind noise reduction is restricted to supported routes`() {
+        val expectedRoutes = setOf(
+            HuaweiDeviceRoute.HUAWEI_FREEBUDS_SE4_ANC,
+            HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC,
+        )
         HuaweiDeviceRoute.entries.forEach { route ->
             assertEquals(
                 route.name,
-                route == HuaweiDeviceRoute.HUAWEI_FREEBUDS_SE4_ANC,
+                route in expectedRoutes,
                 route.supportsWindNoiseReduction,
+            )
+        }
+    }
+
+    @Test
+    fun `surround sound and ldac are restricted to supported Soundcore routes`() {
+        val expectedRoutes = setOf(HuaweiDeviceRoute.SOUNDCORE_LIBERTY_4_NC)
+        HuaweiDeviceRoute.entries.forEach { route ->
+            assertEquals(
+                route.name,
+                route in expectedRoutes,
+                route.supportsSurroundSound,
+            )
+            assertEquals(
+                route.name,
+                route in expectedRoutes,
+                route.supportsLdac,
             )
         }
     }

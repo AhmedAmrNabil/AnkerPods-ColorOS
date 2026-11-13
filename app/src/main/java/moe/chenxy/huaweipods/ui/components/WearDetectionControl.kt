@@ -8,28 +8,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.widget.Toast
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import moe.chenxy.huaweipods.R
 import moe.chenxy.huaweipods.config.ConfigManager
@@ -37,9 +23,7 @@ import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.HuaweiWearDetectionController
 import moe.chenxy.huaweipods.pods.supportsWearDetection
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
-import top.yukonga.miuix.kmp.basic.Switch
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 /**
  * 佩戴检测开关控制，支持华为与 Soundcore 耳机。
@@ -109,33 +93,13 @@ fun WearDetectionControl(address: String, route: HuaweiDeviceRoute) {
         }
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = !pending, role = Role.Switch, onClick = toggle)
-            .padding(horizontal = 24.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.huawei_gesture_wear_detection),
-                color = MiuixTheme.colorScheme.onSurface,
-                style = MiuixTheme.textStyles.headline1,
-            )
-            Text(
-                text = stringResource(R.string.soundcore_wear_detection_summary),
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                style = MiuixTheme.textStyles.body2,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Switch(
-            checked = enabled,
-            enabled = !pending,
-            onCheckedChange = { toggle() },
-        )
-    }
+    SwitchPreference(
+        title = stringResource(R.string.huawei_gesture_wear_detection),
+        summary = stringResource(R.string.soundcore_wear_detection_summary),
+        checked = enabled,
+        enabled = !pending,
+        onCheckedChange = { toggle() },
+    )
 }
 
 @SuppressLint("MissingPermission")

@@ -88,6 +88,7 @@ import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.HuaweiPodsAction
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.addHuaweiPodsAction
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -526,7 +527,6 @@ private fun PopupContent(
     val showLowLatency = deviceRoute.supportsLowLatencyControl
 
 
-    val dialogBgColor = if (isDarkMode) Color(0xFF1A1A1A) else Color(0xFFF7F7F7)
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Scaffold(containerColor = Color.Transparent) { _ ->
@@ -546,8 +546,7 @@ private fun PopupContent(
                 Text(
                     text = stringResource(R.string.close),
                     color = MiuixTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
+                    style = MiuixTheme.textStyles.headline1,
                     modifier = Modifier
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -559,7 +558,6 @@ private fun PopupContent(
                         .padding(vertical = 4.dp),
                 )
             },
-            backgroundColor = dialogBgColor,
             outsideMargin = DpSize(0.dp, 0.dp),
             insideMargin = DpSize(16.dp, 0.dp),
             sheetMaxWidth = Dp.Unspecified,
@@ -647,7 +645,7 @@ private fun PortraitPopupBody(
     ) {
         Text(
             text = deviceName,
-            fontSize = 28.sp,
+            style = MiuixTheme.textStyles.title2,
             fontWeight = FontWeight.Bold,
             color = MiuixTheme.colorScheme.onBackground,
             modifier = Modifier
@@ -675,7 +673,10 @@ private fun PortraitPopupBody(
         }
         if (showLowLatency) {
             Spacer(modifier = Modifier.height(10.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(
+                colors = CardDefaults.defaultColors(color = MiuixTheme.colorScheme.secondaryVariant),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 SwitchPreference(
                     title = stringResource(R.string.low_latency_mode),
                     summary = stringResource(R.string.low_latency_auto_apply_summary),
@@ -686,6 +687,7 @@ private fun PortraitPopupBody(
         }
         Spacer(modifier = Modifier.height(10.dp))
         Card(
+            colors = CardDefaults.defaultColors(color = MiuixTheme.colorScheme.secondaryVariant),
             onClick = onMore,
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -702,7 +704,7 @@ private fun PortraitPopupBody(
                 ) {
                     Text(
                         text = stringResource(R.string.more_settings),
-                        fontSize = 16.sp,
+                        style = MiuixTheme.textStyles.headline2,
                         fontWeight = FontWeight.SemiBold,
                         color = MiuixTheme.colorScheme.onSurface,
                         textAlign = TextAlign.Start,
@@ -710,7 +712,7 @@ private fun PortraitPopupBody(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = stringResource(R.string.more_settings_summary),
-                        fontSize = 13.sp,
+                        style = MiuixTheme.textStyles.body2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         textAlign = TextAlign.Start,
                     )
@@ -761,7 +763,7 @@ private fun LandscapePopupBody(
         ) {
             Text(
                 text = deviceName,
-                fontSize = 22.sp,
+                style = MiuixTheme.textStyles.title3,
                 fontWeight = FontWeight.Bold,
                 color = MiuixTheme.colorScheme.onBackground,
                 modifier = Modifier
@@ -797,7 +799,10 @@ private fun LandscapePopupBody(
             verticalArrangement = Arrangement.Center
         ) {
             if (showLowLatency) {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+                    colors = CardDefaults.defaultColors(color = MiuixTheme.colorScheme.secondaryVariant),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     SwitchPreference(
                         title = stringResource(R.string.low_latency_mode),
                         summary = stringResource(R.string.low_latency_auto_apply_summary),
@@ -808,6 +813,7 @@ private fun LandscapePopupBody(
                 Spacer(modifier = Modifier.height(8.dp))
             }
             Card(
+                colors = CardDefaults.defaultColors(color = MiuixTheme.colorScheme.secondaryVariant),
                 onClick = onMore,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -824,7 +830,7 @@ private fun LandscapePopupBody(
                     ) {
                         Text(
                             text = stringResource(R.string.more_settings),
-                            fontSize = 15.sp,
+                            style = MiuixTheme.textStyles.headline2,
                             fontWeight = FontWeight.SemiBold,
                             color = MiuixTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Start,
@@ -832,7 +838,7 @@ private fun LandscapePopupBody(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = stringResource(R.string.more_settings_summary),
-                            fontSize = 12.sp,
+                            style = MiuixTheme.textStyles.body2,
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             textAlign = TextAlign.Start,
                         )

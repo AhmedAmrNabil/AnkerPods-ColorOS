@@ -33,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -60,6 +59,9 @@ import moe.chenxy.huaweipods.backend.soundcore.SoundcoreBackend
 import moe.chenxy.huaweipods.backend.soundcore.SoundcoreStateManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.RadioButton
 import top.yukonga.miuix.kmp.basic.RadioButtonDefaults
@@ -67,6 +69,7 @@ import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.RadioButtonPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.SinkFeedback
 import top.yukonga.miuix.kmp.utils.pressable
@@ -90,11 +93,8 @@ fun AncSwitch(
     onAncModeSelect: ((NoiseControlMode, Boolean, Int?) -> Unit)? = null,
     showTitle: Boolean = true,
 ) {
-    val verticalPadding = if (!showTitle) 0.dp else if (compact) 8.dp else 16.dp
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = verticalPadding)
+        modifier = Modifier.fillMaxWidth()
     ) {
         if (deviceRoute.supportsSoundcoreAnc) {
             SoundcoreNoiseControlSection(
@@ -216,12 +216,14 @@ private fun HuaweiNoiseControlSelector(
     if (showTitle) {
         Text(
             text = stringResource(R.string.noise_control_title),
-            fontSize = if (compact) 14.sp else 16.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = if (compact) MiuixTheme.textStyles.headline2 else MiuixTheme.textStyles.headline1,
+            fontWeight = FontWeight.Medium,
             color = MiuixTheme.colorScheme.onBackground,
             modifier = Modifier.padding(
-                horizontal = if (compact) 10.dp else 14.dp,
-                vertical = if (compact) 2.dp else 4.dp,
+                start = if (compact) 14.dp else 16.dp,
+                end = if (compact) 14.dp else 16.dp,
+                top = if (compact) 12.dp else 16.dp,
+                bottom = if (compact) 2.dp else 4.dp,
             ),
         )
     }
@@ -285,12 +287,14 @@ private fun SoundcoreNoiseControlSection(
         if (showTitle) {
             Text(
                 text = stringResource(R.string.noise_control_title),
-                fontSize = if (compact) 14.sp else 16.sp,
-                fontWeight = FontWeight.SemiBold,
+                style = if (compact) MiuixTheme.textStyles.headline2 else MiuixTheme.textStyles.headline1,
+                fontWeight = FontWeight.Medium,
                 color = MiuixTheme.colorScheme.onBackground,
                 modifier = Modifier.padding(
-                    horizontal = if (compact) 10.dp else 14.dp,
-                    vertical = if (compact) 2.dp else 4.dp,
+                    start = if (compact) 14.dp else 16.dp,
+                    end = if (compact) 14.dp else 16.dp,
+                    top = if (compact) 12.dp else 16.dp,
+                    bottom = if (compact) 2.dp else 4.dp,
                 ),
             )
         }
@@ -348,141 +352,135 @@ private fun SoundcoreNoiseControlSection(
 
         val hasSubControl = isCancellingSelected || isAdaptiveSelected || isTransparencySelected
         if (hasSubControl) {
-            val horizontalPadding = if (!showTitle) 4.dp else if (compact) 12.dp else 24.dp
-            val unifiedSubControlHeight = 62.dp
-            val unifiedVerticalPadding = if (!showTitle) 4.dp else 4.dp
+            val horizontalPadding = if (compact) 14.dp else 16.dp
+            val subControlTopPadding = if (!showTitle) (if (compact) 12.dp else 16.dp) else (if (compact) 8.dp else 12.dp)
+            val subControlBottomPadding = if (compact) 10.dp else 14.dp
 
-            if (isCancellingSelected) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = unifiedSubControlHeight)
-                        .padding(
-                            start = horizontalPadding,
-                            end = horizontalPadding,
-                            top = unifiedVerticalPadding,
-                            bottom = unifiedVerticalPadding,
-                        ),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+            val subControlContent: @Composable () -> Unit = {
+                if (isCancellingSelected) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = horizontalPadding,
+                                end = horizontalPadding,
+                                top = subControlTopPadding,
+                                bottom = subControlBottomPadding,
+                            ),
                     ) {
-                        Text(
-                            text = stringResource(R.string.soundcore_anc_manual_level),
-                            color = MiuixTheme.colorScheme.onSurface,
-                            style = MiuixTheme.textStyles.headline1,
-                        )
-                        Text(
-                            text = "$savedManualLevel/$maxManualLevel",
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            style = MiuixTheme.textStyles.body2,
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.soundcore_anc_manual_level),
+                                color = MiuixTheme.colorScheme.onBackground,
+                                style = MiuixTheme.textStyles.headline1,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Text(
+                                text = "$savedManualLevel/$maxManualLevel",
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                style = MiuixTheme.textStyles.body2,
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(if (compact) 6.dp else 8.dp))
+
+                        Slider(
+                            value = sliderFloat,
+                            onValueChange = { newFloat ->
+                                sliderFloat = newFloat
+                                val rounded = newFloat.roundToInt().coerceIn(1, maxManualLevel)
+                                if (rounded != savedManualLevel) {
+                                    savedManualLevel = rounded
+                                    onHuaweiAncLevelChange?.invoke(rounded)
+                                }
+                            },
+                            onValueChangeFinished = {
+                                val rounded = sliderFloat.roundToInt().coerceIn(1, maxManualLevel)
+                                sliderFloat = rounded.toFloat()
+                                if (rounded != savedManualLevel) {
+                                    savedManualLevel = rounded
+                                    onHuaweiAncLevelChange?.invoke(rounded)
+                                }
+                            },
+                            valueRange = 1f..maxManualLevel.toFloat(),
+                            steps = if (maxManualLevel > 2) maxManualLevel - 2 else 0,
+                            showKeyPoints = true,
+                            keyPoints = (1..maxManualLevel).map { it.toFloat() },
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
-
-                    Slider(
-                        value = sliderFloat,
-                        onValueChange = { newFloat ->
-                            sliderFloat = newFloat
-                            val rounded = newFloat.roundToInt().coerceIn(1, maxManualLevel)
-                            if (rounded != savedManualLevel) {
-                                savedManualLevel = rounded
-                                onHuaweiAncLevelChange?.invoke(rounded)
-                            }
-                        },
-                        onValueChangeFinished = {
-                            val rounded = sliderFloat.roundToInt().coerceIn(1, maxManualLevel)
-                            sliderFloat = rounded.toFloat()
-                            if (rounded != savedManualLevel) {
-                                savedManualLevel = rounded
-                                onHuaweiAncLevelChange?.invoke(rounded)
-                            }
-                        },
-                        valueRange = 1f..maxManualLevel.toFloat(),
-                        steps = if (maxManualLevel > 2) maxManualLevel - 2 else 0,
-                        showKeyPoints = true,
-                        keyPoints = (1..maxManualLevel).map { it.toFloat() },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            } else if (isAdaptiveSelected) {
-                var envDetection by remember { mutableStateOf(SoundcoreStateManager.environmentDetection) }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = unifiedSubControlHeight)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(role = Role.Switch) {
-                            val target = !envDetection
-                            envDetection = target
-                            SoundcoreBackend.setEnvironmentDetection(target)
-                        }
-                        .padding(
+                } else if (isAdaptiveSelected) {
+                    var envDetection by remember { mutableStateOf(SoundcoreStateManager.environmentDetection) }
+                    SwitchPreference(
+                        title = stringResource(R.string.soundcore_environment_detection),
+                        summary = stringResource(R.string.soundcore_environment_detection_summary),
+                        checked = envDetection,
+                        insideMargin = PaddingValues(
                             start = horizontalPadding,
                             end = horizontalPadding,
-                            top = unifiedVerticalPadding,
-                            bottom = unifiedVerticalPadding,
+                            top = subControlTopPadding,
+                            bottom = subControlBottomPadding,
                         ),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.soundcore_environment_detection),
-                            color = MiuixTheme.colorScheme.onSurface,
-                            style = MiuixTheme.textStyles.headline1,
-                        )
-                        Text(
-                            text = stringResource(R.string.soundcore_environment_detection_summary),
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            style = MiuixTheme.textStyles.body2,
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Switch(
-                        checked = envDetection,
                         onCheckedChange = { target ->
                             envDetection = target
                             SoundcoreBackend.setEnvironmentDetection(target)
-                        }
+                        },
                     )
-                }
-            } else if (isTransparencySelected) {
-                var transMode by remember { mutableStateOf(SoundcoreStateManager.transparencyMode) }
-                val isFull = transMode == 0
-                val isVocal = transMode == 1
+                } else if (isTransparencySelected) {
+                    var transMode by remember { mutableStateOf(SoundcoreStateManager.transparencyMode) }
+                    val isFull = transMode == 0
+                    val isVocal = transMode == 1
+                    val transVerticalPadding = if (!showTitle) (if (compact) 10.dp else 12.dp) else 0.dp
 
-                Column(
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        RadioButtonPreference(
+                            title = stringResource(R.string.soundcore_transparency_full),
+                            selected = isFull,
+                            insideMargin = PaddingValues(
+                                horizontal = horizontalPadding,
+                                vertical = transVerticalPadding,
+                            ),
+                            onClick = {
+                                transMode = 0
+                                SoundcoreBackend.setTransparencyMode(0)
+                            },
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = horizontalPadding),
+                        )
+                        RadioButtonPreference(
+                            title = stringResource(R.string.soundcore_transparency_vocal),
+                            selected = isVocal,
+                            insideMargin = PaddingValues(
+                                horizontal = horizontalPadding,
+                                vertical = transVerticalPadding,
+                            ),
+                            onClick = {
+                                transMode = 1
+                                SoundcoreBackend.setTransparencyMode(1)
+                            },
+                        )
+                    }
+                }
+            }
+
+            if (!showTitle) {
+                Card(
+                    colors = CardDefaults.defaultColors(color = MiuixTheme.colorScheme.secondaryVariant),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = if (!showTitle) 2.dp else 4.dp),
+                        .padding(top = if (compact) 8.dp else 10.dp),
                 ) {
-                    RadioButtonPreference(
-                        title = stringResource(R.string.soundcore_transparency_full),
-                        selected = isFull,
-                        insideMargin = PaddingValues(
-                            horizontal = horizontalPadding,
-                            vertical = if (compact) 8.dp else 12.dp,
-                        ),
-                        onClick = {
-                            transMode = 0
-                            SoundcoreBackend.setTransparencyMode(0)
-                        },
-                    )
-                    RadioButtonPreference(
-                        title = stringResource(R.string.soundcore_transparency_vocal),
-                        selected = isVocal,
-                        insideMargin = PaddingValues(
-                            horizontal = horizontalPadding,
-                            vertical = if (compact) 8.dp else 12.dp,
-                        ),
-                        onClick = {
-                            transMode = 1
-                            SoundcoreBackend.setTransparencyMode(1)
-                        },
-                    )
+                    subControlContent()
                 }
+            } else {
+                subControlContent()
             }
         }
     }
@@ -501,12 +499,6 @@ private fun AncRoundButton(
     val primary = MiuixTheme.colorScheme.primary
     val circleSize = if (compact) 44.dp else 56.dp
     val iconSize = if (compact) 22.dp else 26.dp
-    val isDark = isSystemInDarkTheme()
-    val textColor = if (selected) {
-        if (isDark) Color.White else Color.Black
-    } else {
-        if (isDark) Color.White.copy(alpha = 0.55f) else Color.Black.copy(alpha = 0.55f)
-    }
 
     Column(
         modifier = modifier
@@ -519,7 +511,7 @@ private fun AncRoundButton(
             modifier = Modifier
                 .size(circleSize)
                 .background(
-                    color = if (selected) primary else if (isDark) MiuixTheme.colorScheme.onBackground.copy(alpha = 0.08f) else Color.White,
+                    color = if (selected) primary else MiuixTheme.colorScheme.secondary,
                     shape = CircleShape,
                 ),
             contentAlignment = Alignment.Center,
@@ -527,17 +519,15 @@ private fun AncRoundButton(
             Icon(
                 painter = painterResource(iconRes),
                 contentDescription = label,
-                tint = if (selected) Color.White else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.75f),
+                tint = if (selected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurface,
                 modifier = Modifier.size(iconSize),
             )
         }
         Spacer(modifier = Modifier.height(if (compact) 4.dp else 6.dp))
         Text(
             text = label,
-            fontSize = if (compact) 10.sp else 11.5.sp,
-            lineHeight = if (compact) 12.sp else 13.5.sp,
-            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-            color = textColor,
+            style = MiuixTheme.textStyles.footnote2,
+            color = if (selected) primary else MiuixTheme.colorScheme.onSurfaceVariantSummary,
             textAlign = TextAlign.Center,
             maxLines = 2,
         )
@@ -556,7 +546,7 @@ private fun HuaweiAncSubModeSelector(
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = title,
-            fontSize = if (compact) 13.sp else 15.sp,
+            style = if (compact) MiuixTheme.textStyles.headline2 else MiuixTheme.textStyles.headline1,
             fontWeight = FontWeight.Medium,
             color = MiuixTheme.colorScheme.onBackground,
             modifier = Modifier.padding(horizontal = if (compact) 10.dp else 14.dp),
@@ -599,11 +589,7 @@ private fun HuaweiAncChoice(
     Box(
         modifier = modifier
             .background(
-                color = if (selected) {
-                    primary
-                } else {
-                    MiuixTheme.colorScheme.onBackground.copy(alpha = 0.07f)
-                },
+                color = if (selected) primary else MiuixTheme.colorScheme.secondary,
                 shape = RoundedCornerShape(if (compact) 9.dp else 11.dp),
             )
             .pressable(interactionSource = interactionSource, indication = SinkFeedback())
@@ -616,9 +602,9 @@ private fun HuaweiAncChoice(
     ) {
         Text(
             text = label,
-            fontSize = if (compact) 12.sp else 14.sp,
+            style = MiuixTheme.textStyles.body2,
             fontWeight = FontWeight.Normal,
-            color = if (selected) Color.White else MiuixTheme.colorScheme.onBackground,
+            color = if (selected) MiuixTheme.colorScheme.onPrimary else MiuixTheme.colorScheme.onSurface,
         )
     }
 }
@@ -631,7 +617,7 @@ private fun HuaweiAncSimpleHeader(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val primary = MiuixTheme.colorScheme.primary
-    val trackColor = if (enabled) primary else MiuixTheme.colorScheme.onBackground.copy(alpha = 0.16f)
+    val trackColor = if (enabled) primary else MiuixTheme.colorScheme.secondary
     val thumbOffset = if (enabled) 22.dp else 2.dp
 
     Row(
@@ -644,7 +630,7 @@ private fun HuaweiAncSimpleHeader(
     ) {
         Text(
             text = stringResource(R.string.noise_cancellation_title),
-            fontSize = if (compact) 14.sp else 16.sp,
+            style = if (compact) MiuixTheme.textStyles.headline2 else MiuixTheme.textStyles.headline1,
             fontWeight = FontWeight.SemiBold,
             color = MiuixTheme.colorScheme.onBackground,
             modifier = Modifier.weight(1f)
@@ -660,7 +646,7 @@ private fun HuaweiAncSimpleHeader(
                 modifier = Modifier
                     .padding(start = thumbOffset)
                     .size(22.dp)
-                    .background(Color.White, RoundedCornerShape(11.dp))
+                    .background(MiuixTheme.colorScheme.onPrimary, RoundedCornerShape(11.dp))
             )
         }
     }
@@ -673,9 +659,9 @@ private fun HuaweiAncLevelDial(
     modifier: Modifier = Modifier
 ) {
     val primary = MiuixTheme.colorScheme.primary
-    val tickColor = MiuixTheme.colorScheme.onBackground.copy(alpha = 0.28f)
-    val diskColor = MiuixTheme.colorScheme.onBackground.copy(alpha = 0.035f)
-    val ringColor = MiuixTheme.colorScheme.onBackground.copy(alpha = 0.10f)
+    val tickColor = MiuixTheme.colorScheme.onSurfaceVariantSummary
+    val diskColor = MiuixTheme.colorScheme.secondary
+    val ringColor = MiuixTheme.colorScheme.outline
     val dialSize = if (compact) 116.dp else 188.dp
     var displayedLevel by remember { mutableIntStateOf(level.coerceIn(0, HUAWEI_ANC_LEVEL_LAST)) }
     var sentLevel by remember { mutableIntStateOf(level.coerceIn(0, HUAWEI_ANC_LEVEL_LAST)) }
@@ -736,7 +722,7 @@ private fun HuaweiAncLevelDial(
                 style = Stroke(width = 1.5.dp.toPx())
             )
             drawCircle(
-                color = Color.White.copy(alpha = 0.18f),
+                color = ringColor,
                 radius = radius * 0.72f,
                 center = center,
                 style = Stroke(width = 1.dp.toPx())
@@ -761,7 +747,7 @@ private fun HuaweiAncLevelDial(
             val knobCenter = center.pointOnCircle(radius * 0.86f, knobAngle)
             val knobRadius = if (compact) 9.dp.toPx() else 15.dp.toPx()
             drawCircle(
-                color = primary.copy(alpha = 0.16f),
+                color = diskColor,
                 radius = knobRadius * 1.35f,
                 center = knobCenter
             )

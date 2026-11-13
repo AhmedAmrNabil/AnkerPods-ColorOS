@@ -74,6 +74,7 @@ import moe.chenxy.huaweipods.ui.components.WearDetectionControl
 import moe.chenxy.huaweipods.ui.components.WindNoiseReductionControl
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Text
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.isFreeBuds4Series
@@ -186,7 +187,7 @@ fun PodDetailPage(
                 Text(
                     text = podName,
                     modifier = Modifier.padding(top = 12.dp),
-                    fontSize = 22.sp,
+                    style = MiuixTheme.textStyles.title3,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -341,6 +342,9 @@ private fun LazyListScope.podControlItems(
                         deviceRoute = deviceRoute,
                     )
                     if (deviceRoute.supportsWindNoiseReduction && ancMode != NoiseControlMode.OFF) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
                         WindNoiseReductionControl(
                             address = connectedDeviceAddress,
                             route = deviceRoute,

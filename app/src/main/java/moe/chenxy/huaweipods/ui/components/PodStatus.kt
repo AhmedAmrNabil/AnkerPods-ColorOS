@@ -6,7 +6,6 @@ import android.graphics.drawable.BitmapDrawable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,7 +54,7 @@ fun PodStatus(
     compact: Boolean = false,
     showCase: Boolean = true
 ) {
-    val dividerColor = if (isSystemInDarkTheme()) Color(0xFF333333) else Color(0xFFEEEEEE)
+    val dividerColor = MiuixTheme.colorScheme.dividerLine
     val dividerHeight = if (compact) 40.dp else 56.dp
 
     Row(
@@ -128,14 +127,15 @@ private fun BatteryColumn(
         ) {
             Text(
                 text = paddedLabel,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+                style = MiuixTheme.textStyles.headline2,
+                fontWeight = FontWeight.Bold,
+                color = MiuixTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = displayLevel,
-                fontSize = 13.sp,
-                color = Color.Gray
+                style = MiuixTheme.textStyles.body2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             )
             Image(
                 painter = themedPainterResource(
@@ -227,12 +227,11 @@ fun CompactBatteryRow(
     modifier: Modifier = Modifier,
     showCase: Boolean = true,
 ) {
-    val isDark = isSystemInDarkTheme()
-    val badgeBgColor = if (isDark) Color.White else Color.Black
-    val badgeTextColor = if (isDark) Color.Black else Color.White
     val contentColor = MiuixTheme.colorScheme.onBackground
-    val cutoutColor = if (isDark) Color(0xFF1A1A1A) else Color(0xFFF7F7F7)
-    val chargingColor = Color(0xFF34C759)
+    val cutoutColor = MiuixTheme.colorScheme.background
+    val chargingColor = MiuixTheme.colorScheme.primary
+    val badgeBgColor = MiuixTheme.colorScheme.onSurface
+    val badgeTextColor = MiuixTheme.colorScheme.background
 
     Row(
         modifier = modifier,
@@ -254,7 +253,7 @@ fun CompactBatteryRow(
                 )
                 Text(
                     text = if (isConnected && level > 0) "$level%" else if (isConnected) "$level%" else "-",
-                    fontSize = 14.sp,
+                    style = MiuixTheme.textStyles.body2,
                     fontWeight = FontWeight.SemiBold,
                     color = contentColor,
                 )
@@ -277,11 +276,11 @@ fun CompactBatteryRow(
             EarbudBadge(
                 letter = "L",
                 bgColor = if (isLeftCharging) chargingColor else badgeBgColor,
-                textColor = if (isLeftCharging) Color.White else badgeTextColor,
+                textColor = if (isLeftCharging) MiuixTheme.colorScheme.onPrimary else badgeTextColor,
             )
             Text(
                 text = if (isLeftConnected && leftLevel > 0) "$leftLevel%" else if (isLeftConnected) "$leftLevel%" else "-",
-                fontSize = 14.sp,
+                style = MiuixTheme.textStyles.body2,
                 fontWeight = FontWeight.SemiBold,
                 color = contentColor,
             )
@@ -303,11 +302,11 @@ fun CompactBatteryRow(
             EarbudBadge(
                 letter = "R",
                 bgColor = if (isRightCharging) chargingColor else badgeBgColor,
-                textColor = if (isRightCharging) Color.White else badgeTextColor,
+                textColor = if (isRightCharging) MiuixTheme.colorScheme.onPrimary else badgeTextColor,
             )
             Text(
                 text = if (isRightConnected && rightLevel > 0) "$rightLevel%" else if (isRightConnected) "$rightLevel%" else "-",
-                fontSize = 14.sp,
+                style = MiuixTheme.textStyles.body2,
                 fontWeight = FontWeight.SemiBold,
                 color = contentColor,
             )
@@ -372,14 +371,12 @@ private fun EarbudBadge(
             .background(bgColor, shape = CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.foundation.text.BasicText(
+        Text(
             text = letter,
-            style = androidx.compose.ui.text.TextStyle(
-                color = textColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            ),
+            color = textColor,
+            style = MiuixTheme.textStyles.footnote2,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -388,6 +385,7 @@ private fun EarbudBadge(
 private fun ChargingIndicator(
     modifier: Modifier = Modifier,
 ) {
+    val chargingColor = MiuixTheme.colorScheme.primary
     Canvas(modifier = modifier.size(width = 8.dp, height = 12.dp)) {
         val path = Path().apply {
             moveTo(size.width * 0.6f, 0f)
@@ -398,6 +396,6 @@ private fun ChargingIndicator(
             lineTo(size.width * 0.55f, size.height * 0.45f)
             close()
         }
-        drawPath(path, color = Color(0xFF34C759))
+        drawPath(path, color = chargingColor)
     }
 }

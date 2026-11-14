@@ -92,6 +92,7 @@ fun AncSwitch(
     isAdaptive: Boolean = false,
     onAncModeSelect: ((NoiseControlMode, Boolean, Int?) -> Unit)? = null,
     showTitle: Boolean = true,
+    isPopup: Boolean = false,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth()
@@ -112,6 +113,7 @@ fun AncSwitch(
                 compact = compact,
                 maxManualLevel = if (deviceRoute == HuaweiDeviceRoute.SOUNDCORE_LIBERTY_3_PRO) 3 else 5,
                 showTitle = showTitle,
+                isPopup = isPopup,
             )
         } else {
             if (deviceRoute.supportsTransparency) {
@@ -263,6 +265,7 @@ private fun SoundcoreNoiseControlSection(
     maxManualLevel: Int,
     modifier: Modifier = Modifier,
     showTitle: Boolean = true,
+    isPopup: Boolean = false,
 ) {
     var savedManualLevel by remember {
         mutableIntStateOf(huaweiAncLevel.takeIf { it in 1..maxManualLevel } ?: maxManualLevel)
@@ -299,7 +302,7 @@ private fun SoundcoreNoiseControlSection(
             )
         }
 
-        val buttonsHorizontalPadding = if (!showTitle) 0.dp else if (compact) 6.dp else 10.dp
+        val buttonsHorizontalPadding = if (isPopup) 0.dp else if (compact) 6.dp else 10.dp
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -353,7 +356,7 @@ private fun SoundcoreNoiseControlSection(
         val hasSubControl = isCancellingSelected || isAdaptiveSelected || isTransparencySelected
         if (hasSubControl) {
             val horizontalPadding = if (compact) 14.dp else 16.dp
-            val subControlTopPadding = if (!showTitle) (if (compact) 12.dp else 16.dp) else (if (compact) 8.dp else 12.dp)
+            val subControlTopPadding = if (isPopup) (if (compact) 12.dp else 16.dp) else (if (compact) 8.dp else 12.dp)
             val subControlBottomPadding = if (compact) 10.dp else 14.dp
 
             val subControlContent: @Composable () -> Unit = {
@@ -434,7 +437,7 @@ private fun SoundcoreNoiseControlSection(
                     var transMode by remember { mutableStateOf(SoundcoreStateManager.transparencyMode) }
                     val isFull = transMode == 0
                     val isVocal = transMode == 1
-                    val transVerticalPadding = if (!showTitle) (if (compact) 10.dp else 12.dp) else 0.dp
+                    val transVerticalPadding = if (isPopup) (if (compact) 10.dp else 12.dp) else 0.dp
 
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -470,7 +473,7 @@ private fun SoundcoreNoiseControlSection(
                 }
             }
 
-            if (!showTitle) {
+            if (isPopup) {
                 Card(
                     colors = CardDefaults.defaultColors(color = MiuixTheme.colorScheme.secondaryVariant),
                     modifier = Modifier

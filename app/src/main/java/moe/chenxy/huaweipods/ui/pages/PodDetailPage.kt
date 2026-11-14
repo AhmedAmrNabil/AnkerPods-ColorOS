@@ -75,6 +75,7 @@ import moe.chenxy.huaweipods.ui.components.WindNoiseReductionControl
 import moe.chenxy.huaweipods.utils.miuiStrongToast.data.BatteryParams
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import moe.chenxy.huaweipods.pods.HuaweiDeviceRoute
 import moe.chenxy.huaweipods.pods.isFreeBuds4Series
@@ -328,8 +329,20 @@ private fun LazyListScope.podControlItems(
 
     if (deviceRoute.supportsAnc) {
         item {
+            SmallTitle(
+                text = stringResource(R.string.noise_control_title),
+                textColor = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+            )
+        }
+        item {
             Card(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp),
             ) {
                 Column {
                     AncSwitch(
@@ -340,6 +353,8 @@ private fun LazyListScope.podControlItems(
                         huaweiAncLevel = huaweiAncLevel,
                         onHuaweiAncLevelChange = onHuaweiAncLevelChange,
                         deviceRoute = deviceRoute,
+                        showTitle = false,
+                        isPopup = false,
                     )
                     if (deviceRoute.supportsWindNoiseReduction && ancMode != NoiseControlMode.OFF) {
                         HorizontalDivider(
@@ -457,7 +472,7 @@ private fun LazyListScope.podControlItems(
         }
     }
 
-    if (deviceRoute.supportsLowLatencyControl &&
+    val showLowLatency = deviceRoute.supportsLowLatencyControl &&
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS5 &&
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS5I &&
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS6 &&
@@ -465,20 +480,8 @@ private fun LazyListScope.podControlItems(
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREECLIP2 &&
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS7I &&
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS7
-    ) {
-        item {
-            Card(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-            ) {
-                LowLatencyControl(
-                    address = connectedDeviceAddress,
-                    route = deviceRoute,
-                )
-            }
-        }
-    }
 
-    if (deviceRoute.supportsWearDetection &&
+    val showWearDetection = deviceRoute.supportsWearDetection &&
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS5 &&
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS5I &&
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS6 &&
@@ -486,41 +489,76 @@ private fun LazyListScope.podControlItems(
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS7 &&
         deviceRoute != HuaweiDeviceRoute.HUAWEI_FREEBUDS7I &&
         !deviceRoute.supportsGestureConfiguration
-    ) {
-        item {
-            Card(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-            ) {
-                WearDetectionControl(
-                    address = connectedDeviceAddress,
-                    route = deviceRoute,
-                )
-            }
-        }
-    }
 
-    if (deviceRoute.supportsSurroundSound) {
-        item {
-            Card(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-            ) {
-                SurroundSoundControl(
-                    address = connectedDeviceAddress,
-                    route = deviceRoute,
-                )
-            }
-        }
-    }
+    val showSurroundSound = deviceRoute.supportsSurroundSound
+    val showLdac = deviceRoute.supportsLdac
 
-    if (deviceRoute.supportsLdac) {
+    if (showLowLatency || showWearDetection || showSurroundSound || showLdac) {
+        item {
+            SmallTitle(
+                text = stringResource(R.string.more_settings),
+                textColor = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+            )
+        }
         item {
             Card(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 12.dp),
             ) {
-                LdacControl(
-                    address = connectedDeviceAddress,
-                    route = deviceRoute,
-                )
+                Column {
+                    var needsDivider = false
+
+                    if (showLowLatency) {
+                        LowLatencyControl(
+                            address = connectedDeviceAddress,
+                            route = deviceRoute,
+                        )
+                        needsDivider = true
+                    }
+
+                    if (showWearDetection) {
+                        if (needsDivider) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
+                        WearDetectionControl(
+                            address = connectedDeviceAddress,
+                            route = deviceRoute,
+                        )
+                        needsDivider = true
+                    }
+
+                    if (showSurroundSound) {
+                        if (needsDivider) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
+                        SurroundSoundControl(
+                            address = connectedDeviceAddress,
+                            route = deviceRoute,
+                        )
+                        needsDivider = true
+                    }
+
+                    if (showLdac) {
+                        if (needsDivider) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
+                        LdacControl(
+                            address = connectedDeviceAddress,
+                            route = deviceRoute,
+                        )
+                    }
+                }
             }
         }
     }

@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -539,15 +540,16 @@ private fun PopupContent(
             rawName
         }
         OverlayBottomSheet(
-            title = "",
+            title = null,
             show = showDialog.value,
-            dragHandleColor = Color.Transparent,
             startAction = {
                 Text(
                     text = stringResource(R.string.close),
                     color = MiuixTheme.colorScheme.primary,
                     style = MiuixTheme.textStyles.headline1,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier
+                        .offset(y = (-8).dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -555,7 +557,7 @@ private fun PopupContent(
                             showDialog.value = false
                             onDone()
                         }
-                        .padding(vertical = 4.dp),
+                        .padding(start = 6.dp, end = 6.dp),
                 )
             },
             outsideMargin = DpSize(0.dp, 0.dp),
@@ -669,6 +671,7 @@ private fun PortraitPopupBody(
                 huaweiAncLevel = ancLevel,
                 onHuaweiAncLevelChange = onAncLevelChange,
                 showTitle = false,
+                isPopup = true,
             )
         }
         if (showLowLatency) {
@@ -788,6 +791,7 @@ private fun LandscapePopupBody(
                     onHuaweiAncLevelChange = onAncLevelChange,
                     compact = true,
                     showTitle = false,
+                    isPopup = true,
                 )
             }
         }

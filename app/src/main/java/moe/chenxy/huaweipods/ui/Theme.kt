@@ -5,9 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.theme.defaultTextStyles
 
 @Composable
 fun AppTheme(
@@ -24,6 +26,12 @@ fun AppTheme(
         else -> colorSchemeMode
     }
     val controller = remember(actualMode) { ThemeController(actualMode) }
+    val baseStyles = remember { defaultTextStyles() }
+    val customTextStyles = remember(baseStyles) {
+        baseStyles.copy(
+            subtitle = baseStyles.subtitle.copy(fontWeight = FontWeight.Normal),
+        )
+    }
 
     when (actualMode) {
         ColorSchemeMode.Light, ColorSchemeMode.Dark -> {
@@ -36,11 +44,11 @@ fun AppTheme(
                 }
             }
             CompositionLocalProvider(LocalConfiguration provides overrideConfig) {
-                MiuixTheme(controller = controller, content = content)
+                MiuixTheme(controller = controller, textStyles = customTextStyles, content = content)
             }
         }
         else -> {
-            MiuixTheme(controller = controller, content = content)
+            MiuixTheme(controller = controller, textStyles = customTextStyles, content = content)
         }
     }
 }
